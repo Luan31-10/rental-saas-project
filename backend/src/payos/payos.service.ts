@@ -48,8 +48,9 @@ export class PayosService {
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '')
       .substring(0, 25);
-    const returnUrl = 'http://localhost:3001/tenants/dashboard';
-    const cancelUrl = 'http://localhost:3001/tenants/dashboard';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+    const returnUrl = `${frontendUrl}/tenants/dashboard`;
+    const cancelUrl = `${frontendUrl}/tenants/dashboard`;
 
     await this.prisma.invoice.update({
       where: { id: invoiceId },
@@ -117,9 +118,10 @@ export class PayosService {
     });
 
     const description = `Nang cap ${planId}`.substring(0, 25);
-    const returnUrl = 'http://localhost:3001/settings?upgrade=success';
-    const cancelUrl = 'http://localhost:3001/settings?upgrade=cancel';
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
 
+    const returnUrl = `${frontendUrl}/settings?upgrade=success`;
+    const cancelUrl = `${frontendUrl}/settings?upgrade=cancel`;
     const signatureData = {
       amount,
       cancelUrl,

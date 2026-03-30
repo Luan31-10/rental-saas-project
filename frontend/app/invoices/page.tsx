@@ -21,6 +21,7 @@ export default function InvoicesPage() {
   const [filter, setFilter] = useState({ month: new Date().getMonth() + 1, year: new Date().getFullYear() });
   const [showModal, setShowModal] = useState(false);
   const [formData, setFormData] = useState({ roomId: '', electricity: '', water: '' });
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
   const [pdfInvoice, setPdfInvoice] = useState<Invoice | null>(null);
   const pdfRef = useRef<HTMLDivElement>(null);
@@ -31,7 +32,7 @@ export default function InvoicesPage() {
     const token = localStorage.getItem('token');
     if (!token) return router.push('/login');
     try {
-      const res = await axios.get('http://localhost:3000/property', { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(API_URL + '/property', { headers: { Authorization: `Bearer ${token}` } });
       setProperties(res.data);
       if (res.data.length > 0 && !selectedPropertyId) setSelectedPropertyId(res.data[0].id);
     } catch { router.push('/login'); }
@@ -43,8 +44,8 @@ export default function InvoicesPage() {
     const token = localStorage.getItem('token');
     try {
       const [invRes, roomRes] = await Promise.all([
-        axios.get(`http://localhost:3000/invoice?propertyId=${selectedPropertyId}&month=${filter.month}&year=${filter.year}`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`http://localhost:3000/room?propertyId=${selectedPropertyId}`, { headers: { Authorization: `Bearer ${token}` } })
+        axios.get(`${API_URL}/invoice?propertyId=${selectedPropertyId}&month=${filter.month}&year=${filter.year}`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API_URL}/room?propertyId=${selectedPropertyId}`, { headers: { Authorization: `Bearer ${token}` } })
       ]);
       const currentInvoices = invRes.data;
       setInvoices(currentInvoices);
@@ -61,7 +62,7 @@ export default function InvoicesPage() {
     e.preventDefault();
     const token = localStorage.getItem('token');
     try {
-      await axios.post('http://localhost:3000/invoice', { ...formData, electricity: Number(formData.electricity), water: Number(formData.water), month: filter.month, year: filter.year }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post(API_URL + '/invoice', { ...formData, electricity: Number(formData.electricity), water: Number(formData.water), month: filter.month, year: filter.year }, { headers: { Authorization: `Bearer ${token}` } });
       setShowModal(false);
       setFormData({ roomId: '', electricity: '', water: '' });
       fetchInvoicesAndRooms();
@@ -75,7 +76,7 @@ export default function InvoicesPage() {
     const token = localStorage.getItem('token');
     const newStatus = currentStatus === 'PENDING' ? 'PAID' : 'PENDING';
     try {
-      await axios.patch(`http://localhost:3000/invoice/${id}/status`, { status: newStatus }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.patch(`${API_URL}/invoice/${id}/status`, { status: newStatus }, { headers: { Authorization: `Bearer ${token}` } });
       fetchInvoicesAndRooms();
     } catch { alert('Lỗi cập nhật'); }
   };
@@ -84,7 +85,7 @@ export default function InvoicesPage() {
     if (!window.confirm('Bạn có chắc chắn muốn xóa hóa đơn này?')) return;
     const token = localStorage.getItem('token');
     try {
-      await axios.delete(`http://localhost:3000/invoice/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.delete(`${API_URL}/invoice/${id}`, { headers: { Authorization: `Bearer ${token}` } });
       fetchInvoicesAndRooms();
     } catch { alert('Lỗi xóa hóa đơn'); }
   };
@@ -95,7 +96,7 @@ export default function InvoicesPage() {
     setSendingEmailId(inv.id);
     const token = localStorage.getItem('token');
     try {
-      await axios.post(`http://localhost:3000/invoice/${inv.id}/send-email`, {}, { 
+      await axios.post(`${API_URL}/invoice/${inv.id}/send-email`, {}, { 
         headers: { Authorization: `Bearer ${token}` } 
       });
       alert(`✅ Đã gửi email thành công đến phòng ${inv.room?.roomNumber}!`);

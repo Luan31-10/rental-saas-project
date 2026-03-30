@@ -13,13 +13,14 @@ export default function TwoFactorModal({ isOpen, onClose, onSuccess }: Props) {
   const [otpCode, setOtpCode] = useState('');
   const [loading, setLoading] = useState(true);
   const [verifying, setVerifying] = useState(false);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
   useEffect(() => {
     if (isOpen) {
       const fetchQrCode = async () => {
         try {
           const token = localStorage.getItem('token');
-          const res = await axios.get('http://localhost:3000/auth/2fa/generate', {
+          const res = await axios.get(`${API_URL}/auth/2fa/generate`, {
             headers: { Authorization: `Bearer ${token}` }
           });
           setQrCodeUrl(res.data.qrCodeImage);
@@ -45,7 +46,7 @@ export default function TwoFactorModal({ isOpen, onClose, onSuccess }: Props) {
     setVerifying(true);
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:3000/auth/2fa/turn-on', 
+      await axios.post(`${API_URL}/auth/2fa/turn-on`, 
         { code: otpCode }, 
         { headers: { Authorization: `Bearer ${token}` }}
       );
@@ -53,7 +54,7 @@ export default function TwoFactorModal({ isOpen, onClose, onSuccess }: Props) {
       alert('🎉 Đã BẬT bảo mật 2 lớp thành công!');
       onSuccess();
       onClose();
-    } catch (error) { // 🔥 XÓA CHỮ ": ANY" ĐI
+    } catch (error) {
       if (axios.isAxiosError(error)) {
         alert(error.response?.data?.message || 'Mã xác thực không đúng!');
       } else {

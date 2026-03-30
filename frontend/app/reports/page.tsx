@@ -18,15 +18,15 @@ export default function ReportsPage() {
   const [revenueData, setRevenueData] = useState<{ month: string; revenue: number; expense: number }[]>([]);
   const [occupancyData, setOccupancyData] = useState<{ name: string; total: number; rented: number }[]>([]);
   const [kpi, setKpi] = useState({ totalRevenue: 0, totalExpense: 0, netProfit: 0 });
-
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
   const loadData = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) { router.push('/login'); return; }
     try {
       const headers = { Authorization: `Bearer ${token}` };
       const [propRes, invRes] = await Promise.all([
-        axios.get('http://localhost:3000/property', { headers }).catch(() => ({ data: [] })),
-        axios.get('http://localhost:3000/invoice/owner/all', { headers }).catch(() => ({ data: [] }))
+        axios.get(API_URL + '/property', { headers }).catch(() => ({ data: [] })),
+        axios.get(API_URL + '/invoice/owner/all', { headers }).catch(() => ({ data: [] }))
       ]);
       const properties: Property[] = propRes.data;
       const invoices: Invoice[] = invRes.data;

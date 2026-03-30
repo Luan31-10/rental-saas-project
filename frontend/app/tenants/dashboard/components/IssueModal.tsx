@@ -11,6 +11,7 @@ interface Props {
 
 export default function IssueModal({ isOpen, onClose, roomId, onSuccess }: Props) {
   const [data, setData] = useState({ title: '', description: '' });
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
   if (!isOpen) return null;
 
@@ -18,7 +19,7 @@ export default function IssueModal({ isOpen, onClose, roomId, onSuccess }: Props
     e.preventDefault();
     const token = localStorage.getItem('token');
     try {
-      await axios.post('http://localhost:3000/issue', { ...data, roomId }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post(`${API_URL}/issue`, { ...data, roomId }, { headers: { Authorization: `Bearer ${token}` } });
       setData({ title: '', description: '' });
       onSuccess();
       onClose();

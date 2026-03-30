@@ -20,13 +20,14 @@ export default function ChatModal({ issue, onClose }: { issue: Issue, onClose: (
   const [comments, setComments] = useState<Comment[]>([]);
   const [text, setText] = useState('');
   const endRef = useRef<HTMLDivElement>(null);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    axios.get(`http://localhost:3000/issue/${issue.id}/comments`, { headers: { Authorization: `Bearer ${token}` } })
+    axios.get(`${API_URL}/issue/${issue.id}/comments`, { headers: { Authorization: `Bearer ${token}` } })
       .then(res => setComments(res.data));
 
-    const socket = io('http://localhost:3000');
+    const socket = io(`${API_URL}`);
     socket.on(`new_comment_${issue.id}`, (msg: Comment) => {
       setComments(prev => {
         if (prev.find(c => c.id === msg.id)) return prev;
@@ -43,7 +44,7 @@ export default function ChatModal({ issue, onClose }: { issue: Issue, onClose: (
     if (!text.trim()) return;
     const token = localStorage.getItem('token');
     try {
-      await axios.post(`http://localhost:3000/issue/${issue.id}/comment`, { content: text, sender: 'TENANT' }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post(`${API_URL}/issue/${issue.id}/comment`, { content: text, sender: 'TENANT' }, { headers: { Authorization: `Bearer ${token}` } });
       setText('');
     } catch { alert('Lỗi gửi tin nhắn'); }
   };

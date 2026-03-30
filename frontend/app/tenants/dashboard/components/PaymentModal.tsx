@@ -40,7 +40,7 @@ export default function PaymentModal({ isOpen, onClose, roomInfo }: Props) {
   const amount = roomInfo.balance || 0;
   const transferContent = `Phong ${roomInfo.roomNumber} thanh toan`;
   const qrCodeUrl = `https://img.vietqr.io/image/${bankData.bankId}-${bankData.bankAccount}-compact2.png?amount=${amount}&addInfo=${encodeURIComponent(transferContent)}&accountName=${encodeURIComponent(bankData.bankAccountName)}`;
-
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
   const handleCopy = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopied(true);
@@ -61,7 +61,7 @@ export default function PaymentModal({ isOpen, onClose, roomInfo }: Props) {
       const token = localStorage.getItem('token');
       
       const res = await axios.post(
-        'http://localhost:3000/payos/create-link',
+        `${API_URL}/payos/create-link`,
         { invoiceId: targetInvoiceId },
         { headers: { Authorization: `Bearer ${token}` } }
       );

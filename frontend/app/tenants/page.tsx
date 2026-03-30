@@ -19,12 +19,12 @@ export default function TenantsPage() {
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
   const [formData, setFormData] = useState({ name: '', phone: '', email: '', idCard: '', deposit: '', startDate: '', roomId: '', status: 'ACTIVE' });
-
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
   const fetchProperties = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) { router.push('/login'); return; }
     try {
-      const res = await axios.get('http://localhost:3000/property', { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(`${API_URL}/property`, { headers: { Authorization: `Bearer ${token}` } });
       setProperties(res.data);
       if (res.data.length > 0) setSelectedPropertyId(res.data[0].id);
     } catch { router.push('/login'); }
@@ -38,8 +38,8 @@ export default function TenantsPage() {
     const token = localStorage.getItem('token');
     try {
       const [tenantsRes, roomsRes] = await Promise.all([
-        axios.get(`http://localhost:3000/tenant?propertyId=${selectedPropertyId}`, { headers: { Authorization: `Bearer ${token}` } }),
-        axios.get(`http://localhost:3000/room?propertyId=${selectedPropertyId}`, { headers: { Authorization: `Bearer ${token}` } })
+        axios.get(`${API_URL}/tenant?propertyId=${selectedPropertyId}`, { headers: { Authorization: `Bearer ${token}` } }),
+        axios.get(`${API_URL}/room?propertyId=${selectedPropertyId}`, { headers: { Authorization: `Bearer ${token}` } })
       ]);
       setTenants(tenantsRes.data);
       setRooms(roomsRes.data);
@@ -52,7 +52,7 @@ export default function TenantsPage() {
     e.preventDefault();
     const token = localStorage.getItem('token');
     try {
-      await axios.post('http://localhost:3000/tenant', formData, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post(`${API_URL}/tenant`, formData, { headers: { Authorization: `Bearer ${token}` } });
       setShowModal(false);
       setFormData({ name: '', phone: '', email: '', idCard: '', deposit: '', startDate: '', roomId: '', status: 'ACTIVE' });
       fetchTenantsAndRooms();
@@ -64,7 +64,7 @@ export default function TenantsPage() {
     if (!editingTenant) return;
     const token = localStorage.getItem('token');
     try {
-      await axios.patch(`http://localhost:3000/tenant/${editingTenant.id}`, formData, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.patch(`${API_URL}/tenant/${editingTenant.id}`, formData, { headers: { Authorization: `Bearer ${token}` } });
       setShowEditModal(false); setEditingTenant(null); fetchTenantsAndRooms();
     } catch { alert('Lỗi cập nhật!'); }
   };
@@ -73,7 +73,7 @@ export default function TenantsPage() {
     if (!window.confirm('Bạn có chắc muốn xóa khách này?')) return;
     const token = localStorage.getItem('token');
     try {
-      await axios.delete(`http://localhost:3000/tenant/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.delete(`${API_URL}/tenant/${id}`, { headers: { Authorization: `Bearer ${token}` } });
       fetchTenantsAndRooms();
     } catch { alert('Không thể xóa!'); }
   };

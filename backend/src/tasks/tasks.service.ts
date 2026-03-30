@@ -45,7 +45,9 @@ export class TasksService {
             // eslint-disable-next-line @typescript-eslint/no-unused-vars
           } catch (error) {
             this.logger.error(`Lỗi tạo link PayOS cho hóa đơn ${invoice.id}`);
-            checkoutUrl = 'http://localhost:3001/tenants/dashboard';
+            const frontendUrl =
+              process.env.FRONTEND_URL || 'http://localhost:3001';
+            checkoutUrl = `${frontendUrl}/tenants/dashboard`;
           }
 
           // 🔥 4. TRUYỀN checkoutUrl VÀO LÀM THAM SỐ THỨ 6

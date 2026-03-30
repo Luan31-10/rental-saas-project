@@ -32,13 +32,14 @@ export default function PropertiesPage() {
   const [editAddress, setEditAddress] = useState('');
   const [search] = useState('');
   const router = useRouter();
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
   const fetchData = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) { router.push('/login'); return; }
     
     try {
-      const res = await axios.get('http://localhost:3000/property', {
+      const res = await axios.get(API_URL + '/property', {
         headers: { Authorization: `Bearer ${token}` },
       });
       setProperties(res.data);
@@ -52,7 +53,7 @@ export default function PropertiesPage() {
     e.preventDefault();
     const token = localStorage.getItem('token');
     try {
-      await axios.post('http://localhost:3000/property',
+      await axios.post(API_URL + '/property',
         { name: newName, address: newAddress },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -65,7 +66,7 @@ export default function PropertiesPage() {
     if (!editingProperty) return;
     const token = localStorage.getItem('token');
     try {
-      await axios.patch(`http://localhost:3000/property/${editingProperty.id}`,
+      await axios.patch(`${API_URL}/property/${editingProperty.id}`,
         { name: editName, address: editAddress },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -77,7 +78,7 @@ export default function PropertiesPage() {
     if (!window.confirm('Bạn có chắc chắn muốn xóa khu trọ này không?')) return;
     const token = localStorage.getItem('token');
     try {
-      await axios.delete(`http://localhost:3000/property/${id}`, {
+      await axios.delete(`${API_URL}/property/${id}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       fetchData();

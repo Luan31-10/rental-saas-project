@@ -66,7 +66,9 @@ export class InvoiceService {
           checkoutUrl = payosRes.checkoutUrl;
         } catch (error) {
           console.error('Lỗi lấy link PayOS:', error);
-          checkoutUrl = 'http://localhost:3001/tenants/dashboard';
+          const frontendUrl =
+            process.env.FRONTEND_URL || 'http://localhost:3001';
+          checkoutUrl = `${frontendUrl}/tenants/dashboard`;
         }
 
         // 🔥 4. TRUYỀN THÊM CÁI checkoutUrl VÀO HÀM GỬI MAIL

@@ -23,6 +23,7 @@ export default function PropertyDetail() {
   const [editPrice, setEditPrice] = useState('');
   const [editArea, setEditArea] = useState('');
   const [editStatus, setEditStatus] = useState('AVAILABLE');
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
   const parseJwt = (token: string) => { try { return JSON.parse(atob(token.split('.')[1])); } catch { return null; } };
 
@@ -33,7 +34,7 @@ export default function PropertyDetail() {
     const decoded = parseJwt(token);
     if (decoded?.email) { const n = decoded.email.split('@')[0]; setUserInfo({ name: n, initial: n.charAt(0).toUpperCase() }); }
     try {
-      const res = await axios.get(`http://localhost:3000/room?propertyId=${propertyId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(`${API_URL}/room?propertyId=${propertyId}`, { headers: { Authorization: `Bearer ${token}` } });
       setRooms(res.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); }
@@ -45,7 +46,7 @@ export default function PropertyDetail() {
     e.preventDefault();
     const token = localStorage.getItem('token');
     try {
-      const res = await axios.post('http://localhost:3000/room', { roomNumber: newRoomNumber, price: Number(newPrice), area: Number(newArea), propertyId }, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.post(`${API_URL}/room`, { roomNumber: newRoomNumber, price: Number(newPrice), area: Number(newArea), propertyId }, { headers: { Authorization: `Bearer ${token}` } });
       setShowModal(false); setNewRoomNumber(''); setNewPrice(''); setNewArea('');
       setRooms(prev => [...prev, res.data]);
     } catch { alert('Không thể tạo phòng mới!'); }
@@ -56,7 +57,7 @@ export default function PropertyDetail() {
     if (!editingRoom) return;
     const token = localStorage.getItem('token');
     try {
-      const res = await axios.patch(`http://localhost:3000/room/${editingRoom.id}`, { roomNumber: editRoomNumber, price: Number(editPrice), area: Number(editArea), status: editStatus }, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.patch(`${API_URL}/room/${editingRoom.id}`, { roomNumber: editRoomNumber, price: Number(editPrice), area: Number(editArea), status: editStatus }, { headers: { Authorization: `Bearer ${token}` } });
       setShowEditModal(false); setEditingRoom(null);
       setRooms(prev => prev.map(r => r.id === editingRoom.id ? res.data : r));
     } catch { alert('Không thể cập nhật phòng!'); }
@@ -66,7 +67,7 @@ export default function PropertyDetail() {
     if (!window.confirm('Bạn có chắc chắn muốn xóa phòng này không?')) return;
     const token = localStorage.getItem('token');
     try {
-      await axios.delete(`http://localhost:3000/room/${roomId}`, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.delete(`${API_URL}/room/${roomId}`, { headers: { Authorization: `Bearer ${token}` } });
       setRooms(prev => prev.filter(r => r.id !== roomId));
     } catch { alert('Không thể xóa phòng này!'); }
   };

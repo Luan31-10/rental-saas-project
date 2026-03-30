@@ -13,8 +13,8 @@ export default function RoomsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('ALL');
   const router = useRouter();
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-  // 🔥 State cho Modal Thêm Phòng
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newRoom, setNewRoom] = useState({ propertyId: '', roomNumber: '', price: '', area: '' });
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -23,7 +23,7 @@ export default function RoomsPage() {
     const token = localStorage.getItem('token');
     if (!token) { router.push('/login'); return; }
     try {
-      const res = await axios.get('http://localhost:3000/property', { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(`${API_URL}/property`, { headers: { Authorization: `Bearer ${token}` } });
       setProperties(res.data);
       // Gán sẵn propertyId đầu tiên nếu có
       if (res.data.length > 0) setNewRoom(prev => ({ ...prev, propertyId: res.data[0].id }));
@@ -38,7 +38,7 @@ export default function RoomsPage() {
     setIsSubmitting(true);
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:3000/room', {
+      await axios.post(`${API_URL}/room`, {
         propertyId: newRoom.propertyId,
         roomNumber: newRoom.roomNumber,
         price: Number(newRoom.price),

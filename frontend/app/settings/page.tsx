@@ -92,6 +92,7 @@ export default function SettingsPage() {
   const [payMethod, setPayMethod] = useState<'AUTO' | 'MANUAL'>('AUTO');
   const [isProcessingPay, setIsProcessingPay] = useState(false);
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
   const BANKS = [
     { id: 'TCB', name: 'Techcombank' }, { id: 'MB', name: 'MBBank' },
@@ -114,7 +115,7 @@ export default function SettingsPage() {
           setEditName(n);
         }
 
-        const res = await axios.get('http://localhost:3000/user/profile', {
+        const res = await axios.get(`${API_URL}/user/profile`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         if (res.data) {
@@ -139,7 +140,7 @@ export default function SettingsPage() {
     setIsSaving(true);
     try {
       const token = localStorage.getItem('token');
-      await axios.patch('http://localhost:3000/user/profile', { name: editName, phone: editPhone, address: editAddress }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.patch(`${API_URL}/user/profile`, { name: editName, phone: editPhone, address: editAddress }, { headers: { Authorization: `Bearer ${token}` } });
       alert('✅ Đã cập nhật hồ sơ thành công!');
       setUserInfo(prev => ({ ...prev, name: editName, initial: editName.charAt(0).toUpperCase() }));
     } catch { alert('⚠️ Không thể cập nhật hồ sơ. Vui lòng thử lại!'); } finally { setIsSaving(false); }
@@ -150,7 +151,7 @@ export default function SettingsPage() {
     setIsSaving(true);
     try {
       const token = localStorage.getItem('token');
-      await axios.patch('http://localhost:3000/user/profile', { bankId, bankAccount, bankAccountName }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.patch(`${API_URL}/user/profile`, { bankId, bankAccount, bankAccountName }, { headers: { Authorization: `Bearer ${token}` } });
       alert('✅ Cập nhật cấu hình Thanh toán (VietQR) thành công!');
     } catch { alert('⚠️ Lỗi cập nhật cấu hình thanh toán!'); } finally { setIsSaving(false); }
   };
@@ -161,7 +162,7 @@ export default function SettingsPage() {
     setIsSaving(true);
     try {
       const token = localStorage.getItem('token');
-      await axios.post('http://localhost:3000/auth/change-password', { oldPassword: currentPassword, newPassword: newPassword }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.post(`${API_URL}/auth/change-password`, { oldPassword: currentPassword, newPassword: newPassword }, { headers: { Authorization: `Bearer ${token}` } });
       alert('🔒 Cập nhật mật khẩu thành công! Vui lòng đăng nhập lại.');
       localStorage.removeItem('token'); router.push('/login');
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -174,7 +175,7 @@ export default function SettingsPage() {
       if (!confirm) return;
       try {
         const token = localStorage.getItem('token');
-        await axios.post('http://localhost:3000/auth/2fa/turn-off', {}, { headers: { Authorization: `Bearer ${token}` }});
+        await axios.post(`${API_URL}/auth/2fa/turn-off`, {}, { headers: { Authorization: `Bearer ${token}` }});
         setTwoFactorAuth(false);
         alert('Đã tắt bảo mật 2 lớp!');
       } catch { alert('Lỗi khi tắt 2FA!'); }
@@ -191,7 +192,7 @@ export default function SettingsPage() {
       const token = localStorage.getItem('token');
       
       // 👉 Sếp nhớ thêm chữ email: userInfo.email vào đây nhé!
-      const res = await axios.post('http://localhost:3000/payos/upgrade-plan', 
+      const res = await axios.post(`${API_URL}/payos/upgrade-plan`, 
         { 
           planId: selectedPlan.id, 
           email: userInfo.email // 🔥 Dòng giải cứu thế giới đây

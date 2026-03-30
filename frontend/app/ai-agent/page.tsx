@@ -47,6 +47,7 @@ export default function AiAgentPage() {
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [modalData, setModalData] = useState<ModalPayload | null>(null);
   const [editData, setEditData] = useState<ModalPayload>({});
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
   // 🔥 THÊM STATE CHO AI QUÉT ẢNH
   const [isScanning, setIsScanning] = useState(false);
@@ -76,9 +77,11 @@ export default function AiAgentPage() {
     setIsLoading(true);
     try {
       const token = localStorage.getItem('token');
-      const res = await axios.post('http://localhost:3000/ai/chat',
-        { messages: chatHistory },
-        { headers: { Authorization: `Bearer ${token}` } }
+      const res = await axios.get(API_URL + '/ai/chat',
+        { 
+          params: { messages: chatHistory },
+          headers: { Authorization: `Bearer ${token}` } 
+        }
       );
       const { aiReply, action, payload } = res.data;
       const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: aiReply, action, payload };
@@ -106,19 +109,19 @@ export default function AiAgentPage() {
       const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
       if (activeModal === 'OPEN_MODAL_ADD_PROPERTY') {
-        await axios.post('http://localhost:3000/property', { name: editData.name, address: editData.address }, { headers });
+        await axios.get(API_URL + '/property', { params: { name: editData.name, address: editData.address }, headers });
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: `✅ Đã lưu chính thức khu trọ **${editData.name}** vào Database!` }]);
       } else if (activeModal === 'OPEN_MODAL_ADD_ROOM') {
-        await axios.post('http://localhost:3000/room', { roomNumber: String(editData.roomNumber), price: Number(editData.price), area: Number(editData.area), propertyId: editData.propertyId, status: 'AVAILABLE' }, { headers });
+        await axios.post(API_URL + '/room', { roomNumber: String(editData.roomNumber), price: Number(editData.price), area: Number(editData.area), propertyId: editData.propertyId, status: 'AVAILABLE' }, { headers });
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: `✅ Đã lưu phòng **${editData.roomNumber}** vào Database thành công!` }]);
       } else if (activeModal === 'OPEN_MODAL_ADD_TENANT') {
-        await axios.post('http://localhost:3000/tenant', { name: editData.name, phone: editData.phone, email: editData.email, deposit: Number(editData.deposit), startDate: editData.startDate, roomId: editData.roomId, status: 'ACTIVE' }, { headers });
+        await axios.post(API_URL + '/tenant', { name: editData.name, phone: editData.phone, email: editData.email, deposit: Number(editData.deposit), startDate: editData.startDate, roomId: editData.roomId, status: 'ACTIVE' }, { headers });
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: `✅ Đã thêm khách hàng **${editData.name}** vào phòng ${editData.roomNumber}!` }]);
       } else if (activeModal === 'OPEN_MODAL_CREATE_INVOICE') {
-        await axios.post('http://localhost:3000/invoice', { roomId: editData.roomId, electricity: Number(editData.electricity), water: Number(editData.water), amount: editData.totalAmount, month: editData.month, year: editData.year, status: 'PENDING' }, { headers });
+        await axios.post(API_URL + '/invoice', { roomId: editData.roomId, electricity: Number(editData.electricity), water: Number(editData.water), amount: editData.totalAmount, month: editData.month, year: editData.year, status: 'PENDING' }, { headers });
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: `✅ Đã chốt hóa đơn cho phòng **${editData.roomNumber}** thành công!` }]);
       } else if (activeModal === 'OPEN_MODAL_CHECK_OUT') {
-        await axios.post(`http://localhost:3000/room/${editData.roomId}/checkout`, {}, { headers });
+        await axios.post(`${API_URL}/room/${editData.roomId}/checkout`, {}, { headers });
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: `✅ Đã hoàn tất thủ tục trả phòng cho phòng **${editData.roomNumber}**!` }]);
       }
       setActiveModal(null);

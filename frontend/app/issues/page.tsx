@@ -18,6 +18,7 @@ export default function IssuesPage() {
   const [properties, setProperties] = useState<Property[]>([]);
   const [selectedPropertyId, setSelectedPropertyId] = useState('');
   const [issues, setIssues] = useState<Issue[]>([]);
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
   // State cho phần Chat
   const [chatIssue, setChatIssue] = useState<Issue | null>(null);
@@ -29,7 +30,7 @@ export default function IssuesPage() {
     const token = localStorage.getItem('token');
     if (!token) return router.push('/login');
     try {
-      const res = await axios.get('http://localhost:3000/property', { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(API_URL + '/property', { headers: { Authorization: `Bearer ${token}` } });
       setProperties(res.data);
       if (res.data.length > 0 && !selectedPropertyId) setSelectedPropertyId(res.data[0].id);
     } catch { router.push('/login'); }
@@ -40,7 +41,7 @@ export default function IssuesPage() {
     if (!selectedPropertyId) return;
     const token = localStorage.getItem('token');
     try {
-      const res = await axios.get(`http://localhost:3000/issue/property/${selectedPropertyId}`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(`${API_URL}/issue/property/${selectedPropertyId}`, { headers: { Authorization: `Bearer ${token}` } });
       setIssues(res.data);
     } catch (err) { console.error(err); }
   }, [selectedPropertyId]);
@@ -52,7 +53,7 @@ export default function IssuesPage() {
   useEffect(() => {
     if (!chatIssue) return;
     
-    const socket = io('http://localhost:3000');
+    const socket = io(API_URL);
     socket.on(`new_comment_${chatIssue.id}`, (newComment: IssueComment) => {
       setComments((prev) => {
         if (prev.find(c => c.id === newComment.id)) return prev;
@@ -77,7 +78,7 @@ export default function IssuesPage() {
     else if (currentStatus === 'RESOLVED') newStatus = 'PENDING';
 
     try {
-      await axios.patch(`http://localhost:3000/issue/${id}/status`, { status: newStatus }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.patch(`${API_URL}/issue/${id}/status`, { status: newStatus }, { headers: { Authorization: `Bearer ${token}` } });
       fetchIssues(); 
     } catch { alert('Lỗi cập nhật trạng thái'); }
   };
@@ -86,7 +87,7 @@ export default function IssuesPage() {
     if (!window.confirm('Bạn có chắc chắn muốn xóa báo cáo này?')) return;
     const token = localStorage.getItem('token');
     try {
-      await axios.delete(`http://localhost:3000/issue/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.delete(`${API_URL}/issue/${id}`, { headers: { Authorization: `Bearer ${token}` } });
       fetchIssues();
     } catch { alert('Lỗi xóa sự cố'); }
   };
@@ -95,7 +96,7 @@ export default function IssuesPage() {
     setChatIssue(issue);
     const token = localStorage.getItem('token');
     try {
-      const res = await axios.get(`http://localhost:3000/issue/${issue.id}/comments`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(`${API_URL}/issue/${issue.id}/comments`, { headers: { Authorization: `Bearer ${token}` } });
       setComments(res.data);
     } catch { alert('Lỗi tải tin nhắn'); }
   };
@@ -105,7 +106,7 @@ export default function IssuesPage() {
     if (!commentText.trim() || !chatIssue) return;
     const token = localStorage.getItem('token');
     try {
-      await axios.post(`http://localhost:3000/issue/${chatIssue.id}/comment`, 
+      await axios.post(`${API_URL}/issue/${chatIssue.id}/comment`, 
         { content: commentText, sender: 'ADMIN' }, 
         { headers: { Authorization: `Bearer ${token}` } }
       );

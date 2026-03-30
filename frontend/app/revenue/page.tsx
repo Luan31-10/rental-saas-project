@@ -26,7 +26,8 @@ interface Invoice {
 export default function RevenuePage() {
   const [loading, setLoading] = useState(true);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
-  const [filter, setFilter] = useState('ALL'); // Bộ lọc trạng thái hóa đơn
+  const [filter, setFilter] = useState('ALL');
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
   
   const [stats, setStats] = useState({
     totalExpected: 0,
@@ -40,7 +41,7 @@ export default function RevenuePage() {
         const token = localStorage.getItem('token');
         if (!token) return;
 
-        const res = await axios.get('http://localhost:3000/invoice', {
+        const res = await axios.get(`${API_URL}/invoice`, {
           headers: { Authorization: `Bearer ${token}` }
         }); 
         

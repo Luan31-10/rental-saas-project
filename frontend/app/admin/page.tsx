@@ -13,6 +13,7 @@ export default function AdminDashboardPage() {
   const router = useRouter();
   const [userInfo, setUserInfo] = useState({ name: 'Admin', initial: 'A' });
   const [currentDate, setCurrentDate] = useState('');
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
   const parseJwt = (token: string) => { try { return JSON.parse(atob(token.split('.')[1])); } catch { return null; } };
 
@@ -25,7 +26,7 @@ export default function AdminDashboardPage() {
       setUserInfo({ name: n, initial: n.charAt(0).toUpperCase() });
     }
     try {
-      const res = await axios.get('http://localhost:3000/property', { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(API_URL + '/property', { headers: { Authorization: `Bearer ${token}` } });
       setProperties(res.data);
     } catch { console.error('Không lấy được dữ liệu'); }
     finally { setLoading(false); }
