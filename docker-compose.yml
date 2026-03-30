@@ -1,0 +1,30 @@
+version: '3.8'
+services:
+  # Cấu hình PostgreSQL (Lưu dữ liệu quan hệ: Chủ trọ, Phòng, Hóa đơn)
+  postgres:
+    image: postgres:15
+    container_name: rental-postgres
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: password123
+      POSTGRES_DB: rental_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # Cấu hình MongoDB (Lưu dữ liệu phi quan hệ: Log AI chat, lịch sử hệ thống)
+  mongodb:
+    image: mongo:6
+    container_name: rental-mongo
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: password123
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+
+volumes:
+  pgdata:
+  mongodata:
