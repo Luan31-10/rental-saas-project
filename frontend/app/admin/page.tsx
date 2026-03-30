@@ -26,7 +26,7 @@ export default function AdminDashboardPage() {
       setUserInfo({ name: n, initial: n.charAt(0).toUpperCase() });
     }
     try {
-      const res = await axios.get(API_URL + '/property', { headers: { Authorization: `Bearer ${token}` } });
+      const res = await axios.get(API_URL +'/property', { headers: { Authorization: `Bearer ${token}` } });
       setProperties(res.data);
     } catch { console.error('Không lấy được dữ liệu'); }
     finally { setLoading(false); }

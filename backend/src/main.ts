@@ -8,7 +8,14 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe());
 
   // Thêm dòng này để Frontend (Next.js) có thể gọi API
-  app.enableCors();
+  app.enableCors({
+    origin: (origin, callback) => {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
+      callback(null, true);
+    },
+    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
+    credentials: true,
+  });
 
   await app.listen(process.env.PORT ?? 3000);
 }
