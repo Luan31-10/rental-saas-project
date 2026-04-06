@@ -2,12 +2,93 @@
 import { useEffect, useState, useCallback } from 'react';
 import axios from 'axios';
 import { useRouter } from 'next/navigation';
-import Sidebar from '@/components/Sidebar'; // 🔥 ĐÃ IMPORT SIDEBAR
+import Sidebar from '@/components/Sidebar';
 
+// 1. Interfaces
 interface Property { id: string; name: string; }
 interface Room { id: string; roomNumber: string; status: string; price: number; }
 interface Tenant { id: string; name: string; phone: string; email?: string; idCard?: string; deposit: number; startDate: string; status: string; room?: Room; }
 
+interface FormDataState {
+  name: string; 
+  phone: string; 
+  email: string; 
+  idCard: string; 
+  deposit: string; 
+  startDate: string; 
+  roomId: string; 
+  status: string;
+}
+
+interface ModalFormProps {
+  onSubmit: (e: React.FormEvent) => void;
+  onClose: () => void;
+  title: string;
+  isEdit?: boolean;
+  formData: FormDataState;
+  setFormData: React.Dispatch<React.SetStateAction<FormDataState>>;
+  availableRooms?: Room[];
+}
+
+// 2. Styles
+const modalInputStyle = { width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #252d3d', background: '#161a21', color: '#e8e8e8', outline: 'none', fontSize: 14, fontFamily: 'inherit' };
+const modalLabelStyle = { display: 'block' as const, fontSize: 11.5, color: '#4a5568', textTransform: 'uppercase' as const, marginBottom: 7, fontWeight: 600, letterSpacing: '0.06em' };
+
+// 3. ModalForm Component
+const ModalForm = ({ onSubmit, onClose, title, isEdit, formData, setFormData, availableRooms }: ModalFormProps) => (
+  <div onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+    <div style={{ width: 520, background: '#1e2330', border: '1px solid #252d3d', borderRadius: 14, padding: 28, boxShadow: '0 24px 64px rgba(0,0,0,0.5)', maxHeight: '90vh', overflowY: 'auto' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
+        <div style={{ fontSize: 16, fontWeight: 700, color: '#f0f0f0' }}>{title}</div>
+        <button type="button" onClick={onClose} style={{ width: 30, height: 30, borderRadius: '50%', background: '#222836', border: '1px solid #252d3d', color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="12" height="12" viewBox="0 0 15 15" fill="none"><path d="M2 2L13 13M13 2L2 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
+        </button>
+      </div>
+      <form onSubmit={onSubmit}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+          <div><label style={modalLabelStyle}>Họ và tên</label><input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={modalInputStyle} /></div>
+          {isEdit ? (
+            <div>
+              <label style={modalLabelStyle}>Trạng thái</label>
+              <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} style={{ ...modalInputStyle, cursor: 'pointer' }}>
+                <option value="ACTIVE">Đang ở</option>
+                <option value="INACTIVE">Đã chuyển đi</option>
+              </select>
+            </div>
+          ) : (
+            <div>
+              <label style={modalLabelStyle}>Chọn phòng</label>
+              <select required value={formData.roomId} onChange={e => setFormData({...formData, roomId: e.target.value})} style={{ ...modalInputStyle, cursor: 'pointer' }}>
+                <option value="">-- Chọn phòng trống --</option>
+                {availableRooms?.map((r: Room) => <option key={r.id} value={r.id}>Phòng {r.roomNumber} — {r.price.toLocaleString()}₫</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+          <div><label style={modalLabelStyle}>Số điện thoại</label><input required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Email</label><input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} style={modalInputStyle} /></div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+          <div><label style={modalLabelStyle}>CCCD/CMND</label><input value={formData.idCard} onChange={e => setFormData({...formData, idCard: e.target.value})} style={modalInputStyle} /></div>
+          <div><label style={modalLabelStyle}>Tiền cọc (₫)</label><input type="number" required value={formData.deposit} onChange={e => setFormData({...formData, deposit: e.target.value})} style={modalInputStyle} /></div>
+        </div>
+        {!isEdit && (
+          <div style={{ marginBottom: 22 }}><label style={modalLabelStyle}>Ngày vào ở</label><input type="date" required value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} style={modalInputStyle} /></div>
+        )}
+        <div style={{ display: 'flex', gap: 10, marginTop: isEdit ? 22 : 0 }}>
+          <button type="button" onClick={onClose} style={{ flex: 1, padding: '11px', borderRadius: 8, border: '1px solid #252d3d', background: 'transparent', color: '#8896a8', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5 }}>Hủy</button>
+          <button type="submit" style={{ flex: 2, padding: '11px', borderRadius: 8, background: '#fff', color: '#000', border: 'none', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5 }}>
+            {isEdit ? 'Lưu thay đổi' : 'Lưu thông tin'}
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+);
+
+// 4. Main Component
 export default function TenantsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
@@ -18,8 +99,10 @@ export default function TenantsPage() {
   const [showModal, setShowModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
-  const [formData, setFormData] = useState({ name: '', phone: '', email: '', idCard: '', deposit: '', startDate: '', roomId: '', status: 'ACTIVE' });
-  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+  const [formData, setFormData] = useState<FormDataState>({ name: '', phone: '', email: '', idCard: '', deposit: '', startDate: '', roomId: '', status: 'ACTIVE' });
+  
+  const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://luanez-backend.onrender.com';
+
   const fetchProperties = useCallback(async () => {
     const token = localStorage.getItem('token');
     if (!token) { router.push('/login'); return; }
@@ -29,7 +112,7 @@ export default function TenantsPage() {
       if (res.data.length > 0) setSelectedPropertyId(res.data[0].id);
     } catch { router.push('/login'); }
     finally { setLoading(false); }
-  }, [router]);
+  }, [router, API_URL]);
 
   useEffect(() => { fetchProperties(); }, [fetchProperties]);
 
@@ -44,17 +127,36 @@ export default function TenantsPage() {
       setTenants(tenantsRes.data);
       setRooms(roomsRes.data);
     } catch (e) { console.error(e); }
-  }, [selectedPropertyId]);
+  }, [selectedPropertyId, API_URL]);
 
   useEffect(() => { fetchTenantsAndRooms(); }, [fetchTenantsAndRooms]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // 🔥 CHỐT CHẶN: Kiểm tra trùng lặp
+    const isDuplicatePhone = tenants.some(t => t.phone === formData.phone);
+    const isDuplicateID = tenants.some(t => formData.idCard && t.idCard === formData.idCard);
+    const isDuplicateName = tenants.some(t => t.name.toLowerCase().trim() === formData.name.toLowerCase().trim());
+
+    if (isDuplicatePhone) {
+      alert('⚠️ Số điện thoại này đã tồn tại trong danh sách khách thuê của khu trọ này!');
+      return;
+    }
+    if (isDuplicateID) {
+      alert('⚠️ Số CCCD/CMND này đã tồn tại trong hệ thống khu trọ này!');
+      return;
+    }
+    if (isDuplicateName) {
+      const confirmAdd = window.confirm(`⚠️ Tên "${formData.name}" đã có trong danh sách. Bạn có chắc chắn muốn thêm một khách mới trùng tên không?`);
+      if (!confirmAdd) return;
+    }
+
     const token = localStorage.getItem('token');
     try {
       await axios.post(`${API_URL}/tenant`, formData, { headers: { Authorization: `Bearer ${token}` } });
       setShowModal(false);
-      setFormData({ name: '', phone: '', email: '', idCard: '', deposit: '', startDate: '', roomId: '', status: 'ACTIVE' });
+      setFormData({ name: '', phone: '', email: '', idCard: '', deposit: '', startDate: new Date().toISOString().split('T')[0], roomId: '', status: 'ACTIVE' });
       fetchTenantsAndRooms();
     } catch { alert('Lỗi khi thêm khách thuê!'); }
   };
@@ -62,6 +164,14 @@ export default function TenantsPage() {
   const handleUpdate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingTenant) return;
+
+    // 🔥 Chặn trùng khi sửa (trừ chính nó)
+    const isDuplicatePhone = tenants.some(t => t.phone === formData.phone && t.id !== editingTenant.id);
+    if (isDuplicatePhone) {
+      alert('⚠️ Không thể cập nhật: Số điện thoại này đã được dùng bởi khách thuê khác!');
+      return;
+    }
+
     const token = localStorage.getItem('token');
     try {
       await axios.patch(`${API_URL}/tenant/${editingTenant.id}`, formData, { headers: { Authorization: `Bearer ${token}` } });
@@ -70,7 +180,7 @@ export default function TenantsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!window.confirm('Bạn có chắc muốn xóa khách này?')) return;
+    if (!window.confirm('Bạn có chắc muốn xóa khách này? Dữ liệu này không thể khôi phục.')) return;
     const token = localStorage.getItem('token');
     try {
       await axios.delete(`${API_URL}/tenant/${id}`, { headers: { Authorization: `Bearer ${token}` } });
@@ -78,74 +188,59 @@ export default function TenantsPage() {
     } catch { alert('Không thể xóa!'); }
   };
 
+  // ==========================================
+  // 🔥 XỬ LÝ TRẢ PHÒNG NHANH (CÓ CHUYỂN TRANG)
+  // ==========================================
+  const handleCheckoutTenant = async (roomId: string, tenantName: string) => {
+    if (!roomId) return alert('Khách này không gắn với phòng nào!');
+    const confirm = window.confirm(`Làm thủ tục trả phòng cho khách ${tenantName}? Hệ thống sẽ chốt hóa đơn và cắt tiền phòng lẻ nếu có.`);
+    if (!confirm) return;
+    
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`${API_URL}/room/${roomId}/checkout`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      alert(`✅ ${res.data.message}`);
+      
+      // Hỏi sếp xem có muốn đi thẳng qua trang Hóa đơn không
+      const viewInvoice = window.confirm('Sếp có muốn đi tới trang Hóa đơn để xem chi tiết và in không?');
+      if (viewInvoice) {
+         router.push('/invoices');
+      } else {
+         fetchTenantsAndRooms(); // Không xem thì load lại bảng khách thuê
+      }
+    } catch (error) {
+      console.error(error);
+      if (axios.isAxiosError(error)) {
+        alert(`⚠️ ${error.response?.data?.message || 'Lỗi trả phòng!'}`);
+      } else {
+        alert('⚠️ Lỗi hệ thống khi trả phòng!');
+      }
+    }
+  };
+
   const openEditModal = (t: Tenant) => {
     setEditingTenant(t);
-    setFormData({ name: t.name, phone: t.phone, email: t.email || '', idCard: t.idCard || '', deposit: String(t.deposit), startDate: t.startDate.split('T')[0], roomId: t.room?.id || '', status: t.status });
+    setFormData({ 
+      name: t.name, 
+      phone: t.phone, 
+      email: t.email || '', 
+      idCard: t.idCard || '', 
+      deposit: String(t.deposit), 
+      startDate: t.startDate.split('T')[0], 
+      roomId: t.room?.id || '', 
+      status: t.status 
+    });
     setShowEditModal(true);
   };
 
   const availableRooms = rooms.filter(r => r.status === 'AVAILABLE');
 
-  const modalInputStyle = { width: '100%', padding: '10px 14px', borderRadius: 8, border: '1px solid #252d3d', background: '#161a21', color: '#e8e8e8', outline: 'none', fontSize: 14, fontFamily: 'inherit' };
-  const modalLabelStyle = { display: 'block' as const, fontSize: 11.5, color: '#4a5568', textTransform: 'uppercase' as const, marginBottom: 7, fontWeight: 600, letterSpacing: '0.06em' };
-
   if (loading) return (
     <div style={{ display: 'flex', height: '100vh', alignItems: 'center', justifyContent: 'center', background: '#1a1f28' }}>
       <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       <div style={{ width: 28, height: 28, borderRadius: '50%', border: '2px solid #222836', borderTop: '2px solid #fff', animation: 'spin 0.8s linear infinite' }} />
-    </div>
-  );
-
-  const ModalForm = ({ onSubmit, onClose, title, isEdit }: { onSubmit: (e: React.FormEvent) => void; onClose: () => void; title: string; isEdit?: boolean }) => (
-    <div onClick={e => { if (e.target === e.currentTarget) onClose(); }}
-      style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(6px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
-      <div style={{ width: 520, background: '#1e2330', border: '1px solid #252d3d', borderRadius: 14, padding: 28, boxShadow: '0 24px 64px rgba(0,0,0,0.5)', maxHeight: '90vh', overflowY: 'auto' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: '#f0f0f0' }}>{title}</div>
-          <button onClick={onClose} style={{ width: 30, height: 30, borderRadius: '50%', background: '#222836', border: '1px solid #252d3d', color: '#6b7280', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <svg width="12" height="12" viewBox="0 0 15 15" fill="none"><path d="M2 2L13 13M13 2L2 13" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>
-          </button>
-        </div>
-        <form onSubmit={onSubmit}>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-            <div><label style={modalLabelStyle}>Họ và tên</label><input required value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={modalInputStyle} /></div>
-            {isEdit ? (
-              <div>
-                <label style={modalLabelStyle}>Trạng thái</label>
-                <select value={formData.status} onChange={e => setFormData({...formData, status: e.target.value})} style={{ ...modalInputStyle, cursor: 'pointer' }}>
-                  <option value="ACTIVE">Đang ở</option>
-                  <option value="INACTIVE">Đã chuyển đi</option>
-                </select>
-              </div>
-            ) : (
-              <div>
-                <label style={modalLabelStyle}>Chọn phòng</label>
-                <select required value={formData.roomId} onChange={e => setFormData({...formData, roomId: e.target.value})} style={{ ...modalInputStyle, cursor: 'pointer' }}>
-                  <option value="">-- Phòng trống --</option>
-                  {availableRooms.map(r => <option key={r.id} value={r.id}>Phòng {r.roomNumber} — {r.price.toLocaleString()}₫</option>)}
-                </select>
-              </div>
-            )}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-            <div><label style={modalLabelStyle}>Số điện thoại</label><input required value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} style={modalInputStyle} /></div>
-            <div><label style={modalLabelStyle}>Email</label><input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} style={modalInputStyle} /></div>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
-            <div><label style={modalLabelStyle}>CCCD/CMND</label><input value={formData.idCard} onChange={e => setFormData({...formData, idCard: e.target.value})} style={modalInputStyle} /></div>
-            <div><label style={modalLabelStyle}>Tiền cọc (₫)</label><input type="number" required value={formData.deposit} onChange={e => setFormData({...formData, deposit: e.target.value})} style={modalInputStyle} /></div>
-          </div>
-          {!isEdit && (
-            <div style={{ marginBottom: 22 }}><label style={modalLabelStyle}>Ngày vào ở</label><input type="date" required value={formData.startDate} onChange={e => setFormData({...formData, startDate: e.target.value})} style={modalInputStyle} /></div>
-          )}
-          <div style={{ display: 'flex', gap: 10, marginTop: isEdit ? 22 : 0 }}>
-            <button type="button" onClick={onClose} style={{ flex: 1, padding: '11px', borderRadius: 8, border: '1px solid #252d3d', background: 'transparent', color: '#8896a8', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5 }}>Hủy</button>
-            <button type="submit" style={{ flex: 2, padding: '11px', borderRadius: 8, background: '#fff', color: '#000', border: 'none', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5 }}>
-              {isEdit ? 'Lưu thay đổi' : 'Lưu thông tin'}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 
@@ -160,7 +255,6 @@ export default function TenantsPage() {
         .tbl-row { border-bottom: 1px solid #1e2330; transition: background 0.12s; }
         .tbl-row:last-child { border-bottom: none; }
         .tbl-row:hover { background: rgba(255,255,255,0.02); }
-        .tbl-row:hover .row-actions { opacity: 1; }
         .row-actions { opacity: 0.5; transition: opacity 0.15s; display: flex; gap: 6px; justify-content: flex-end; }
         .tbl-row:hover .row-actions { opacity: 1; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
@@ -178,7 +272,7 @@ export default function TenantsPage() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <select value={selectedPropertyId} onChange={e => setSelectedPropertyId(e.target.value)}
-              style={{ background: '#222836', color: '#e8e8e8', border: '1px solid #252d3d', padding: '6px 12px', borderRadius: 7, fontSize: 13, outline: 'none', fontFamily: 'inherit' }}>
+              style={{ background: '#222836', color: '#e8e8e8', border: '1px solid #252d3d', padding: '6px 12px', borderRadius: 7, fontSize: 13, outline: 'none', fontFamily: 'inherit', cursor: 'pointer' }}>
               {properties.length === 0 && <option value="">Chưa có khu trọ</option>}
               {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
@@ -211,7 +305,7 @@ export default function TenantsPage() {
               </thead>
               <tbody>
                 {tenants.length === 0 ? (
-                  <tr><td colSpan={6} style={{ padding: '56px 20px', textAlign: 'center', color: '#2a3040', fontSize: 14 }}>Khu trọ này hiện chưa có khách thuê nào.</td></tr>
+                  <tr><td colSpan={6} style={{ padding: '56px 20px', textAlign: 'center', color: '#4a5568', fontSize: 14 }}>Khu trọ này hiện chưa có khách thuê nào.</td></tr>
                 ) : tenants.map(item => (
                   <tr key={item.id} className="tbl-row">
                     <td style={{ padding: '16px 20px', verticalAlign: 'middle' }}>
@@ -246,7 +340,18 @@ export default function TenantsPage() {
                         <button onClick={() => openEditModal(item)} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12.5, border: '1px solid #252d3d', background: 'transparent', color: '#8896a8', cursor: 'pointer', fontFamily: 'inherit', transition: '0.15s' }}
                           onMouseOver={e => { e.currentTarget.style.color = '#e8e8e8'; e.currentTarget.style.borderColor = '#354055'; e.currentTarget.style.background = '#222836'; }}
                           onMouseOut={e => { e.currentTarget.style.color = '#8896a8'; e.currentTarget.style.borderColor = '#252d3d'; e.currentTarget.style.background = 'transparent'; }}>Sửa</button>
-                        <button onClick={() => handleDelete(item.id)} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12.5, border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.06)', color: '#f87171', cursor: 'pointer', fontFamily: 'inherit' }}>Xóa</button>
+                        
+                        {/* 🔥 THÊM NÚT TRẢ PHÒNG NHANH TẠI ĐÂY */}
+                        {item.status === 'ACTIVE' && (
+                          <button onClick={() => handleCheckoutTenant(item.room?.id || '', item.name)}
+                            style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12.5, border: '1px solid rgba(52,211,153,0.3)', background: 'rgba(52,211,153,0.05)', color: '#34d399', cursor: 'pointer', fontFamily: 'inherit', transition: '0.15s' }}
+                            onMouseOver={e => e.currentTarget.style.background = 'rgba(52,211,153,0.1)'}
+                            onMouseOut={e => e.currentTarget.style.background = 'rgba(52,211,153,0.05)'}>Trả phòng</button>
+                        )}
+
+                        <button onClick={() => handleDelete(item.id)} style={{ padding: '5px 12px', borderRadius: 6, fontSize: 12.5, border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.06)', color: '#f87171', cursor: 'pointer', fontFamily: 'inherit', transition: '0.15s' }}
+                          onMouseOver={e => { e.currentTarget.style.background = 'rgba(248,113,113,0.12)'; }}
+                          onMouseOut={e => { e.currentTarget.style.background = 'rgba(248,113,113,0.06)'; }}>Xóa</button>
                       </div>
                     </td>
                   </tr>
@@ -257,8 +362,8 @@ export default function TenantsPage() {
         </div>
       </div>
 
-      {showModal && <ModalForm onSubmit={handleCreate} onClose={() => setShowModal(false)} title="Thêm Khách Thuê Mới" />}
-      {showEditModal && <ModalForm onSubmit={handleUpdate} onClose={() => setShowEditModal(false)} title="Cập nhật Khách Thuê" isEdit />}
+      {showModal && <ModalForm onSubmit={handleCreate} onClose={() => setShowModal(false)} title="Thêm Khách Thuê Mới" formData={formData} setFormData={setFormData} availableRooms={availableRooms} />}
+      {showEditModal && <ModalForm onSubmit={handleUpdate} onClose={() => setShowEditModal(false)} title="Cập nhật Khách Thuê" isEdit formData={formData} setFormData={setFormData} />}
     </div>
   );
 }

@@ -101,7 +101,7 @@ export class PayosService {
 
     // Set giá thật theo gói
     let amount = 0;
-    if (planId === 'PRO') amount = 299000;
+    if (planId === 'PRO') amount = 2000;
     else if (planId === 'ENTERPRISE') amount = 999000;
     else throw new BadRequestException('Gói không hợp lệ!');
 
@@ -205,5 +205,21 @@ export class PayosService {
       console.error('❌ Lỗi Webhook:', error);
       return { success: false };
     }
+  }
+  async downgradeToFree(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) throw new BadRequestException('Không tìm thấy tài khoản!');
+
+    await this.prisma.user.update({
+      where: { id: user.id },
+      data: {
+        plan: 'FREE',
+        planExpiryDate: null,
+        pendingPlan: null,
+        upgradeOrderCode: null,
+      },
+    });
+
+    return { success: true, message: 'Đã hạ cấp về gói Starter!' };
   }
 }

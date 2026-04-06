@@ -38,4 +38,22 @@ export class PropertyService {
       where: { id },
     });
   }
+  async updatePricing(
+    id: string,
+    ownerId: string,
+    data: {
+      baseElectricityPrice: number | string;
+      baseWaterPrice: number | string;
+      defaultRoomPrice: number | string;
+    },
+  ) {
+    return this.prisma.property.update({
+      where: { id: id, ownerId: ownerId },
+      data: {
+        baseElectricityPrice: Number(data.baseElectricityPrice),
+        baseWaterPrice: Number(data.baseWaterPrice),
+        defaultRoomPrice: Number(data.defaultRoomPrice),
+      },
+    });
+  }
 }

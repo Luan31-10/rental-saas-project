@@ -1,415 +1,464 @@
-import { Injectable } from '@nestjs/common';
-import { GoogleGenerativeAI, GenerativeModel } from '@google/generative-ai';
+import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import OpenAI from 'openai'; // 🔥 Import OpenAI
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
-import * as dotenv from 'dotenv';
-dotenv.config();
+
+interface AiActionData {
+  propertyName?: string | null;
+  address?: string | null;
+  roomNumber?: string | null;
+  price?: number | null;
+  area?: number | null;
+  tenantName?: string | null;
+  phone?: string | null;
+  citizenId?: string | null;
+  deposit?: number | null;
+  startDate?: string | null;
+  electricity?: number | null;
+  water?: number | null;
+  isViolated?: boolean | null;
+}
 
 interface AiParsedResponse {
   intent: string;
-  data: Record<string, string | number | null>;
+  data: AiActionData;
   reply: string;
 }
 
 @Injectable()
-export class AiService {
-  private genAI: GoogleGenerativeAI;
-  private model: GenerativeModel;
+export class AiService implements OnModuleInit {
+  private openai: OpenAI;
+  private readonly logger = new Logger(AiService.name);
 
   constructor(
     private prisma: PrismaService,
     private mailService: MailService,
   ) {
-    const apiKey = process.env.GEMINI_API_KEY || '';
-    this.genAI = new GoogleGenerativeAI(apiKey);
-    this.model = this.genAI.getGenerativeModel({
-      model: 'gemini-3-flash-preview',
-      generationConfig: {
-        responseMimeType: 'application/json',
-      },
-    });
+    const apiKey = process.env.OPENAI_API_KEY || '';
+    this.openai = new OpenAI({ apiKey });
   }
 
-  async processChat(messages: { role: string; content: string }[]) {
-    if (!this.model) {
-      return { aiReply: 'Hệ thống AI chưa sẵn sàng.' };
+  onModuleInit() {
+    this.logger.log(
+      '🚀 Trợ lý AI LuanEZ (Powered by GPT) đã sẵn sàng phục vụ sếp!',
+    );
+  }
+
+  async processChat(
+    messages: { role: string; content: string }[],
+    userId: string,
+  ) {
+    if (!process.env.OPENAI_API_KEY) {
+      return {
+        aiReply: '⚠️ Sếp ơi, chưa có OPENAI_API_KEY trong file .env kìa!',
+      };
     }
 
-    // Lọc bỏ câu chào mặc định
     const filteredMessages = messages.filter(
       (m) => !m.content.includes('Chào sếp! Trợ lý LuanEZ AI đã sẵn sàng'),
     );
 
-    const chatContext = filteredMessages
-      .map((m) => `${m.role === 'user' ? 'Sếp' : 'AI'}: ${m.content}`)
-      .join('\n');
+    const formattedMessages: { role: 'user' | 'assistant'; content: string }[] =
+      filteredMessages.map((m) => ({
+        role: m.role === 'ai' ? 'assistant' : 'user',
+        content: m.content,
+      }));
 
-    // Prompt kỷ luật thép + Ví dụ mẫu (Few-shot)
+    const today = new Date().toLocaleDateString('vi-VN');
+
     const systemInstruction = `
-      NHIỆM VỤ TỐI CAO: Bạn là MÁY TRÍCH XUẤT DỮ LIỆU. Chỉ trả về JSON chuẩn, KHÔNG BÌNH LUẬN HAY CHÀO HỎI.
-      
-      Hãy đọc LỊCH SỬ CHAT bên dưới. Xác định Ý ĐỊNH CHÍNH (intent) và trích xuất thông tin (data). Cái nào không có thì để null.
-
-      CÁC Ý ĐỊNH (INTENT) CHO PHÉP: "ADD_ROOM", "ADD_PROPERTY", "REGISTER_TENANT", "CREATE_INVOICE", "CHECK_OUT", "CHECK_EMPTY_ROOMS", "REVENUE_REPORT", "UNPAID_INVOICES", "GENERATE_CONTRACT"
-
-      --- HƯỚNG DẪN BẰNG VÍ DỤ CỤ THỂ ---
-      Ví dụ 1:
-      Chat: "Thêm phòng 105 đi"
-      JSON: {"intent": "ADD_ROOM", "data": {"propertyName": null, "address": null, "roomNumber": "105", "price": null, "area": null, "tenantName": null, "phone": null, "citizenId": null, "deposit": null, "startDate": null, "electricity": null, "water": null}, "reply": "Đã nhận lệnh"}
-
-      Ví dụ 2:
-      Chat: "Thêm phòng 102 khu A giá 3 củ rộng 20m"
-      JSON: {"intent": "ADD_ROOM", "data": {"propertyName": "khu A", "address": null, "roomNumber": "102", "price": 3000000, "area": 20, "tenantName": null, "phone": null, "citizenId": null, "deposit": null, "startDate": null, "electricity": null, "water": null}, "reply": "Đã nhận lệnh"}
-
-      Ví dụ 3: 
-      Chat: "Khách Yến Vy thuê phòng 201 khu Bình Thạnh"
-      JSON: {"intent": "REGISTER_TENANT", "data": {"propertyName": "Bình Thạnh", "address": null, "roomNumber": "201", "price": null, "area": null, "tenantName": "Yến Vy", "phone": null, "citizenId": null, "deposit": null, "startDate": null, "electricity": null, "water": null}, "reply": "Đã nhận lệnh"}
-      
-      --- KẾT QUẢ BẮT BUỘC PHẢI THEO CẤU TRÚC JSON SAU ---
+      Bạn là trợ lý quản lý nhà trọ LuanEZ. Nhiệm vụ: Trích xuất thông tin thành JSON chuẩn.
+      BẮT BUỘC TRẢ VỀ JSON THEO ĐỊNH DẠNG SAU:
       {
-        "intent": "...",
-        "data": { 
-          "propertyName": "...", 
-          "address": "...", 
-          "roomNumber": "...", 
-          "price": 0, 
-          "area": 0,
-          "tenantName": "...", 
-          "phone": "...", 
-          "citizenId": "...",
-          "deposit": 0,
-          "startDate": "...",
-          "electricity": 0, 
-          "water": 0
-        },
-        "reply": "Xác nhận."
+        "intent": "ADD_ROOM" | "ADD_PROPERTY" | "REGISTER_TENANT" | "CREATE_INVOICE" | "CHECK_OUT" | "GENERATE_CONTRACT" | "CHECK_EMPTY_ROOMS" | "REVENUE_REPORT" | "UNPAID_INVOICES" | "OTHER",
+        "data": { "propertyName": "...", "roomNumber": "...", "price": 0, "area": 0, "tenantName": "...", "phone": "...", "citizenId": "...", "deposit": 0, "startDate": "...", "electricity": 0, "water": 0, "isViolated": false },
+        "reply": "Câu trả lời thân thiện của bạn"
       }
+      Hôm nay: ${today}.
     `;
 
-    const finalPrompt =
-      systemInstruction +
-      '\n\n--- LỊCH SỬ CHAT (ĐỂ GOM DỮ LIỆU) ---\n' +
-      chatContext +
-      '\n\nMÁY TRÍCH XUẤT JSON TRẢ VỀ:';
-
     try {
-      const result = await this.model.generateContent(finalPrompt);
-      const responseText = result.response.text();
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+      const response = await this.openai.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemInstruction },
+          ...formattedMessages,
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.2,
+      });
 
-      if (!jsonMatch) {
-        throw new Error('JSON Error');
-      }
+      const responseText = response.choices[0].message.content || '{}';
+      const aiResponse = JSON.parse(responseText) as AiParsedResponse;
 
-      const aiResponse = JSON.parse(jsonMatch[0]) as AiParsedResponse;
       let { intent } = aiResponse;
-      const { data } = aiResponse;
+      const { data, reply } = aiResponse;
 
-      if (intent === 'ADD_PROPERTY' && data.roomNumber) {
-        intent = 'ADD_ROOM';
+      if (intent === 'ADD_PROPERTY' && data?.roomNumber) intent = 'ADD_ROOM';
+
+      const validIntents = [
+        'ADD_ROOM',
+        'ADD_PROPERTY',
+        'REGISTER_TENANT',
+        'CHECK_OUT',
+        'CREATE_INVOICE',
+        'GENERATE_CONTRACT',
+        'CHECK_EMPTY_ROOMS',
+        'REVENUE_REPORT',
+        'UNPAID_INVOICES',
+      ];
+
+      if (!intent || !validIntents.includes(intent))
+        return { aiReply: reply || 'Tôi nghe rõ ạ!' };
+
+      switch (intent) {
+        case 'ADD_PROPERTY':
+          return await this.handleAddProperty(data, userId);
+        case 'ADD_ROOM':
+          return await this.handleAddRoom(data, userId);
+        case 'REGISTER_TENANT':
+          return await this.handleRegisterTenant(data, userId);
+        case 'CREATE_INVOICE':
+          return await this.handleCreateInvoice(data, userId);
+        case 'CHECK_OUT':
+          return await this.handleCheckOut(data, userId);
+        case 'GENERATE_CONTRACT':
+          return await this.handleGenerateContract(data, userId);
+        case 'CHECK_EMPTY_ROOMS':
+          return await this.handleCheckEmptyRooms(userId);
+        case 'REVENUE_REPORT':
+          return await this.handleRevenueReport(userId);
+        case 'UNPAID_INVOICES':
+          return await this.handleUnpaidInvoices(userId);
+        default:
+          return { aiReply: reply };
       }
-
-      if (
-        !intent ||
-        ![
-          'ADD_ROOM',
-          'ADD_PROPERTY',
-          'REGISTER_TENANT',
-          'CHECK_OUT',
-          'CREATE_INVOICE',
-          'CHECK_EMPTY_ROOMS',
-          'REVENUE_REPORT',
-          'UNPAID_INVOICES',
-          'GENERATE_CONTRACT',
-        ].includes(intent)
-      ) {
-        return {
-          aiReply: `⚠️ Trợ lý chưa bắt được lệnh của sếp. Sếp muốn Thêm phòng, Khách thuê, hay Tạo hóa đơn ạ? (Data nhận được: ${JSON.stringify(data)})`,
-        };
-      }
-
-      if (intent === 'ADD_PROPERTY') {
-        if (!data.propertyName || !data.address) {
-          return {
-            aiReply: `⚠️ Sếp ơi, thiếu thông tin rồi! Tạo khu trọ mới cần đủ **Tên khu trọ** và **Địa chỉ** ạ.`,
-          };
-        }
-        return {
-          aiReply: `✅ Đã lên nháp thông tin khu trọ **${data.propertyName}**. Sếp kiểm tra lại form nhé!`,
-          action: 'OPEN_MODAL_ADD_PROPERTY',
-          payload: {
-            name: String(data.propertyName),
-            address: String(data.address),
-          },
-        };
-      }
-
-      if (intent === 'ADD_ROOM') {
-        if (
-          !data.propertyName ||
-          !data.roomNumber ||
-          data.price === null ||
-          data.price === undefined ||
-          data.area === null ||
-          data.area === undefined
-        ) {
-          return {
-            aiReply: `⚠️ Để thêm phòng, sếp đọc đủ giúp tôi: **Tên khu trọ, Số phòng, Giá tiền, và Diện tích** để lên nháp form nhé.`,
-          };
-        }
-
-        const property = await this.prisma.property.findFirst({
-          where: {
-            name: { contains: String(data.propertyName), mode: 'insensitive' },
-          },
-        });
-
-        if (!property) {
-          return {
-            aiReply: `Sếp ơi, không thấy khu trọ nào tên "${data.propertyName}" trong hệ thống.`,
-          };
-        }
-
-        return {
-          aiReply: `✅ Đã gom đủ dữ liệu phòng ${data.roomNumber} cho khu ${property.name}. Sếp duyệt qua rồi bấm lưu nhé!`,
-          action: 'OPEN_MODAL_ADD_ROOM',
-          payload: {
-            propertyId: property.id,
-            propertyName: property.name,
-            roomNumber: String(data.roomNumber),
-            price: Number(data.price),
-            area: Number(data.area),
-          },
-        };
-      }
-
-      if (intent === 'REGISTER_TENANT') {
-        if (
-          !data.propertyName ||
-          !data.roomNumber ||
-          !data.tenantName ||
-          !data.phone ||
-          !data.citizenId ||
-          data.deposit === null ||
-          data.deposit === undefined ||
-          !data.startDate
-        ) {
-          return {
-            aiReply: `⚠️ Hồ sơ khách thiếu thông tin! Sếp bổ sung giúp: **Tên khu trọ, Số phòng, Tên khách, SĐT, Số CCCD, Tiền cọc, và Ngày vào ở**.`,
-          };
-        }
-
-        const property = await this.prisma.property.findFirst({
-          where: {
-            name: { contains: String(data.propertyName), mode: 'insensitive' },
-          },
-        });
-
-        if (!property)
-          return {
-            aiReply: `Sếp ơi, không tìm thấy khu trọ "${data.propertyName}".`,
-          };
-
-        const room = await this.prisma.room.findFirst({
-          where: {
-            roomNumber: String(data.roomNumber),
-            propertyId: property.id,
-          },
-        });
-
-        if (!room || room.status !== 'AVAILABLE') {
-          return {
-            aiReply: `Phòng ${data.roomNumber} tại khu ${property.name} không tồn tại hoặc đã có người ở.`,
-          };
-        }
-
-        return {
-          aiReply: `✅ Đã gom đủ hồ sơ khách ${data.tenantName} vào phòng ${room.roomNumber} (${property.name}). Sếp rà soát form nhé!`,
-          action: 'OPEN_MODAL_ADD_TENANT',
-          payload: {
-            roomId: room.id,
-            roomNumber: room.roomNumber,
-            name: String(data.tenantName),
-            phone: String(data.phone),
-            email: `CCCD: ${data.citizenId}`,
-            deposit: Number(data.deposit),
-            startDate: String(data.startDate),
-          },
-        };
-      }
-
-      if (intent === 'CREATE_INVOICE') {
-        if (
-          !data.propertyName ||
-          !data.roomNumber ||
-          data.electricity === null ||
-          data.electricity === undefined ||
-          data.water === null ||
-          data.water === undefined
-        ) {
-          return {
-            aiReply: `⚠️ Chốt hóa đơn cần chính xác. Sếp bổ sung giúp: **Tên khu trọ, Số phòng, Số điện, và Số nước** nhé!`,
-          };
-        }
-
-        const property = await this.prisma.property.findFirst({
-          where: {
-            name: { contains: String(data.propertyName), mode: 'insensitive' },
-          },
-        });
-
-        if (!property)
-          return {
-            aiReply: `Sếp ơi, không tìm thấy khu trọ "${data.propertyName}".`,
-          };
-
-        const room = await this.prisma.room.findFirst({
-          where: {
-            roomNumber: String(data.roomNumber),
-            propertyId: property.id,
-          },
-          include: { tenants: { where: { status: 'ACTIVE' } } },
-        });
-
-        if (!room || !room.tenants[0])
-          return {
-            aiReply: `Phòng ${data.roomNumber} (${property.name}) hiện không có khách để làm hóa đơn.`,
-          };
-
-        const elec = Number(data.electricity);
-        const waterNum = Number(data.water);
-        const total = room.price + elec * 3500 + waterNum * 15000;
-
-        return {
-          aiReply: `✅ Đã tính toán xong hóa đơn phòng ${room.roomNumber} - ${property.name}. Sếp duyệt form nhé!`,
-          action: 'OPEN_MODAL_CREATE_INVOICE',
-          payload: {
-            roomId: room.id,
-            roomNumber: room.roomNumber,
-            roomPrice: room.price,
-            electricity: elec,
-            water: waterNum,
-            totalAmount: total,
-            month: new Date().getMonth() + 1,
-            year: new Date().getFullYear(),
-          },
-        };
-      }
-
-      if (intent === 'CHECK_OUT') {
-        if (!data.propertyName || !data.roomNumber)
-          return {
-            aiReply: `Sếp muốn làm thủ tục trả phòng cho **Số phòng** nào ở **Khu trọ** nào ạ?`,
-          };
-
-        const property = await this.prisma.property.findFirst({
-          where: {
-            name: { contains: String(data.propertyName), mode: 'insensitive' },
-          },
-        });
-
-        if (!property)
-          return {
-            aiReply: `Sếp ơi, không tìm thấy khu trọ "${data.propertyName}".`,
-          };
-
-        const room = await this.prisma.room.findFirst({
-          where: {
-            roomNumber: String(data.roomNumber),
-            propertyId: property.id,
-          },
-        });
-
-        if (!room)
-          return {
-            aiReply: `Không thấy phòng ${data.roomNumber} tại khu ${property.name} sếp ơi.`,
-          };
-
-        return {
-          aiReply: `⚠️ Sếp đang yêu cầu trả phòng ${data.roomNumber} (${property.name}). Sếp vui lòng duyệt thao tác này trên màn hình!`,
-          action: 'OPEN_MODAL_CHECK_OUT',
-          payload: { roomId: room.id, roomNumber: room.roomNumber },
-        };
-      }
-
-      if (intent === 'GENERATE_CONTRACT') {
-        if (!data.propertyName || !data.roomNumber)
-          return {
-            aiReply:
-              'Sếp muốn soạn hợp đồng cho **Số phòng** ở **Khu trọ** nào ạ?',
-          };
-
-        const property = await this.prisma.property.findFirst({
-          where: {
-            name: { contains: String(data.propertyName), mode: 'insensitive' },
-          },
-        });
-
-        if (!property)
-          return {
-            aiReply: `Sếp ơi, không tìm thấy khu trọ "${data.propertyName}".`,
-          };
-
-        const room = await this.prisma.room.findFirst({
-          where: {
-            roomNumber: String(data.roomNumber),
-            propertyId: property.id,
-          },
-          include: { tenants: { where: { status: 'ACTIVE' } }, property: true },
-        });
-
-        if (!room || !room.tenants[0])
-          return {
-            aiReply: `Phòng ${data.roomNumber} tại khu ${property.name} đang trống, không thể soạn hợp đồng.`,
-          };
-
-        const tenant = room.tenants[0];
-
-        const contractPrompt = `Soạn "HỢP ĐỒNG THUÊ NHÀ TRỌ" tiếng Việt.\n\nBẮT BUỘC BẮT ĐẦU BẰNG ĐÚNG 4 DÒNG SAU:\n                                CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM\n                                      Độc lập - Tự do - Hạnh phúc\n                                    -------------------------------\n                                        HỢP ĐỒNG THUÊ NHÀ\n\nNội dung bắt buộc:\n- BÊN CHO THUÊ: Ông Võ Thành Luân\n- BÊN THUÊ: ${tenant.name}, SĐT: ${tenant.phone}, Email/CCCD: ${tenant.email || '...'}\n- ĐỊA ĐIỂM: Phòng ${room.roomNumber}, thuộc ${room.property.name}.\n- GIÁ THUÊ: ${room.price.toLocaleString('vi-VN')} VNĐ/tháng.\n- TIỀN CỌC: ${tenant.deposit ? tenant.deposit.toLocaleString('vi-VN') : '0'} VNĐ.\n- NGÀY BẮT ĐẦU: ${tenant.startDate.toLocaleDateString('vi-VN')}.\nViết rõ ràng các điều khoản.`;
-
-        const contractResult = await this.model.generateContent(contractPrompt);
-        return {
-          aiReply: `✅ Đã soạn xong hợp đồng cho khách ${tenant.name} tại phòng ${room.roomNumber} (${property.name})!`,
-          action: 'DISPLAY_CONTRACT',
-          payload: { content: contractResult.response.text() },
-        };
-      }
-
-      if (intent === 'CHECK_EMPTY_ROOMS') {
-        const empty = await this.prisma.room.findMany({
-          where: { status: 'AVAILABLE' },
-        });
-        return {
-          aiReply: `Báo cáo sếp, hiện có ${empty.length} phòng trống: ${empty.map((r) => r.roomNumber).join(', ')}.`,
-        };
-      }
-
-      if (intent === 'REVENUE_REPORT') {
-        const paid = await this.prisma.invoice.findMany({
-          where: { status: 'PAID' },
-        });
-        const total = paid.reduce((s, i) => s + i.amount, 0);
-        return {
-          aiReply: `💰 Tổng tiền phòng đã thu được là: ${total.toLocaleString()} VNĐ thưa sếp!`,
-        };
-      }
-
-      if (intent === 'UNPAID_INVOICES') {
-        const unpaid = await this.prisma.invoice.findMany({
-          where: { status: 'PENDING' },
-          include: { room: true },
-        });
-        if (unpaid.length === 0)
-          return { aiReply: 'Hiện không có ai nợ tiền cả sếp ơi!' };
-        return {
-          aiReply: `⚠️ Đang có ${unpaid.length} phòng chưa đóng tiền: ${unpaid.map((i) => 'P.' + i.room?.roomNumber).join(', ')}.`,
-        };
-      }
-
-      return { aiReply: aiResponse.reply };
-    } catch (e) {
-      console.error(e);
-      return { aiReply: 'Hệ thống đang bảo trì, sếp vui lòng thử lại sau.' };
+    } catch (error: unknown) {
+      this.logger.error('Lỗi OpenAI API:', error);
+      return {
+        aiReply:
+          'Hệ thống OpenAI đang bận, sếp kiểm tra lại Key hoặc thử lại sau nhé.',
+      };
     }
+  }
+
+  // --- CÁC HÀM XỬ LÝ LOGIC ---
+
+  private async handleAddProperty(data: AiActionData, userId: string) {
+    // 🛑 Ràng buộc: Chống trùng lặp tên khu trọ
+    const existing = await this.prisma.property.findFirst({
+      where: {
+        name: { equals: String(data.propertyName || ''), mode: 'insensitive' },
+        ownerId: userId,
+      },
+    });
+
+    if (existing) {
+      return {
+        aiReply: `⚠️ Khu trọ **${data.propertyName}** đã có sẵn trong hệ thống rồi sếp ơi! Sếp đặt tên khác nhé.`,
+      };
+    }
+
+    return {
+      aiReply: `✅ Đã nháp khu trọ **${String(data.propertyName || '')}**.`,
+      action: 'OPEN_MODAL_ADD_PROPERTY',
+      payload: {
+        name: String(data.propertyName || ''),
+        address: String(data.address || ''),
+      },
+    };
+  }
+
+  private async handleAddRoom(data: AiActionData, userId: string) {
+    // 🛑 Ràng buộc: Chống nhập số âm vô lý
+    if (Number(data.price) < 0 || Number(data.area) < 0) {
+      return {
+        aiReply: '⚠️ Ô kìa sếp! Giá thuê và diện tích sao lại là số âm được ạ?',
+      };
+    }
+
+    const property = await this.prisma.property.findFirst({
+      where: {
+        name: {
+          contains: String(data.propertyName || ''),
+          mode: 'insensitive',
+        },
+        ownerId: userId,
+      },
+    });
+
+    if (!property)
+      return {
+        aiReply: `Không thấy khu trọ "${String(data.propertyName || '')}".`,
+      };
+
+    // 🛑 Ràng buộc: Chống tạo trùng số phòng trong cùng 1 khu trọ
+    const existingRoom = await this.prisma.room.findFirst({
+      where: {
+        roomNumber: String(data.roomNumber || ''),
+        propertyId: property.id,
+      },
+    });
+
+    if (existingRoom) {
+      return {
+        aiReply: `⚠️ Phòng **${data.roomNumber}** đã tồn tại trong khu **${property.name}** rồi sếp ạ!`,
+      };
+    }
+
+    return {
+      aiReply: `✅ Đã nháp phòng ${String(data.roomNumber || '')}.`,
+      action: 'OPEN_MODAL_ADD_ROOM',
+      payload: {
+        propertyId: property.id,
+        propertyName: property.name,
+        roomNumber: String(data.roomNumber || ''),
+        price: Number(data.price || 0),
+        area: Number(data.area || 20),
+      },
+    };
+  }
+
+  private async handleRegisterTenant(data: AiActionData, userId: string) {
+    // 🛑 Ràng buộc: Chống tiền cọc âm
+    if (Number(data.deposit) < 0) {
+      return { aiReply: '⚠️ Tiền cọc không thể là số âm đâu sếp ơi!' };
+    }
+
+    const property = await this.prisma.property.findFirst({
+      where: {
+        name: {
+          contains: String(data.propertyName || ''),
+          mode: 'insensitive',
+        },
+        ownerId: userId,
+      },
+    });
+
+    if (!property)
+      return {
+        aiReply: `Không thấy khu trọ "${String(data.propertyName || '')}".`,
+      };
+
+    const room = await this.prisma.room.findFirst({
+      where: {
+        roomNumber: String(data.roomNumber || ''),
+        propertyId: property.id,
+      },
+      include: { tenants: { where: { status: 'ACTIVE' } } }, // Lấy kèm khách đang ở
+    });
+
+    if (!room) {
+      return {
+        aiReply: `Sếp ơi, em không tìm thấy phòng ${data.roomNumber} trong khu ${property.name}.`,
+      };
+    }
+
+    // 🛑 Ràng buộc: Phòng đã có người ở thì cấm cho người mới vào
+    if (room.tenants && room.tenants.length > 0) {
+      return {
+        aiReply: `⚠️ Phòng **${room.roomNumber}** hiện đang có khách ở rồi sếp ơi! Mình phải làm thủ tục trả phòng cho khách cũ trước nhé.`,
+      };
+    }
+
+    return {
+      aiReply: `✅ Đã lên hồ sơ khách **${String(data.tenantName || '')}**.`,
+      action: 'OPEN_MODAL_ADD_TENANT',
+      payload: {
+        roomId: room.id,
+        roomNumber: room.roomNumber,
+        name: String(data.tenantName || ''),
+        phone: String(data.phone || ''),
+        email: String(data.citizenId || ''),
+        deposit: Number(data.deposit || 0),
+        startDate: String(
+          data.startDate || new Date().toISOString().split('T')[0],
+        ),
+      },
+    };
+  }
+
+  private async handleCreateInvoice(data: AiActionData, userId: string) {
+    // 🛑 Ràng buộc: Số điện nước không được âm
+    if (Number(data.electricity) < 0 || Number(data.water) < 0) {
+      return {
+        aiReply:
+          '⚠️ Số điện hoặc số nước không hợp lệ (đang là số âm) sếp nhé!',
+      };
+    }
+
+    const room = await this.prisma.room.findFirst({
+      where: {
+        roomNumber: String(data.roomNumber || ''),
+        property: { ownerId: userId },
+      },
+      include: { property: true, tenants: { where: { status: 'ACTIVE' } } },
+    });
+
+    if (!room || !room.tenants[0])
+      return {
+        aiReply: `Phòng ${data.roomNumber} hiện tại đang trống, không chốt được hóa đơn sếp ạ.`,
+      };
+
+    const currentMonth = new Date().getMonth() + 1;
+    const currentYear = new Date().getFullYear();
+
+    // 🛑 Ràng buộc: Chống chốt hóa đơn 2 lần trong 1 tháng
+    const existingInvoice = await this.prisma.invoice.findFirst({
+      where: { roomId: room.id, month: currentMonth, year: currentYear },
+    });
+
+    if (existingInvoice) {
+      return {
+        aiReply: `⚠️ Hóa đơn tháng ${currentMonth}/${currentYear} của phòng **${room.roomNumber}** đã được chốt rồi. Sếp cẩn thận nhầm lẫn nhé!`,
+      };
+    }
+
+    const total =
+      room.price +
+      Number(data.electricity || 0) *
+        (room.property.baseElectricityPrice || 3500) +
+      Number(data.water || 0) * (room.property.baseWaterPrice || 15000);
+
+    return {
+      aiReply: `✅ Đã tính hóa đơn phòng ${room.roomNumber}.`,
+      action: 'OPEN_MODAL_CREATE_INVOICE',
+      payload: {
+        roomId: room.id,
+        roomNumber: room.roomNumber,
+        electricity: Number(data.electricity || 0),
+        water: Number(data.water || 0),
+        totalAmount: total,
+        month: currentMonth,
+        year: currentYear,
+      },
+    };
+  }
+
+  private async handleCheckOut(data: AiActionData, userId: string) {
+    const room = await this.prisma.room.findFirst({
+      where: {
+        roomNumber: String(data.roomNumber || ''),
+        property: { ownerId: userId },
+      },
+      include: { tenants: { where: { status: 'ACTIVE' } } },
+    });
+
+    // 🛑 Ràng buộc: Đảm bảo phòng có người mới cho trả
+    if (!room || !room.tenants || room.tenants.length === 0) {
+      return {
+        aiReply: `⚠️ Ô kìa, phòng ${data.roomNumber} làm gì có khách nào đang ở mà trả sếp ơi!`,
+      };
+    }
+
+    return {
+      aiReply: `✅ Chuẩn bị trả phòng cho khách ${room.tenants[0].name}.`,
+      action: 'OPEN_MODAL_CHECK_OUT',
+      payload: { roomId: room.id, roomNumber: room.roomNumber },
+    };
+  }
+
+  private async handleGenerateContract(data: AiActionData, userId: string) {
+    const room = await this.prisma.room.findFirst({
+      where: {
+        roomNumber: String(data.roomNumber || ''),
+        property: { ownerId: userId },
+      },
+      include: { tenants: { where: { status: 'ACTIVE' } }, property: true },
+    });
+
+    if (!room || !room.tenants[0])
+      return { aiReply: 'Phòng trống không soạn được hợp đồng sếp ạ.' };
+
+    const tenant = room.tenants[0];
+    const property = room.property;
+
+    const today = new Date();
+    const dd = today.getDate().toString().padStart(2, '0');
+    const mm = (today.getMonth() + 1).toString().padStart(2, '0');
+    const yyyy = today.getFullYear();
+
+    const priceStr = room.price ? room.price.toLocaleString('vi-VN') : '0';
+    const depositStr = tenant.deposit
+      ? tenant.deposit.toLocaleString('vi-VN')
+      : '0';
+    const startDateStr = tenant.startDate
+      ? new Date(tenant.startDate).toLocaleDateString('vi-VN')
+      : '.../.../......';
+
+    const prompt = `
+    Hãy soạn một HỢP ĐỒNG THUÊ PHÒNG TRỌ thật chuyên nghiệp.
+    ĐIỀU KIỆN BẮT BUỘC: 
+    1. Tuyệt đối KHÔNG sử dụng ký tự Markdown như dấu sao, dấu thăng. Chỉ dùng chữ IN HOA để nhấn mạnh tiêu đề.
+    2. Điền CHÍNH XÁC 100% các thông tin sau vào hợp đồng, không để trống:
+    
+    - Bên cho thuê (Bên A): Đại diện khu trọ ${property.name}
+    - Địa chỉ khu trọ: ${property.address || '...........................................'}
+    - Bên thuê (Bên B): Ông/Bà ${tenant.name}
+    - Số điện thoại Bên B: ${tenant.phone || '....................'}
+    - CCCD/Email Bên B: ${tenant.email || '....................'}
+    - Phòng thuê: Số ${room.roomNumber}
+    - Giá thuê: ${priceStr} VNĐ/tháng
+    - Tiền cọc đã nhận: ${depositStr} VNĐ
+    - Ngày bắt đầu ở: ${startDateStr}
+    - Hôm nay lập ngày: ${dd} tháng ${mm} năm ${yyyy}
+    
+    Mẫu mở đầu BẮT BUỘC phải y hệt như sau (căn giữa bằng dấu cách):
+                              CỘNG HÒA XÃ HỘI CHỦ NGHĨA VIỆT NAM
+                                    Độc lập - Tự do - Hạnh phúc
+                                  ------------------------------
+
+                                      HỢP ĐỒNG THUÊ PHÒNG TRỌ
+
+    (Sau đó viết tiếp các điều khoản 1, 2, 3... thật rõ ràng, rành mạch. Phía cuối là phần ký tên của 2 bên đặt lệch sang 2 bên trái phải).
+    `;
+
+    const contractResponse = await this.openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'Bạn là chuyên gia pháp lý bất động sản. Tuân thủ tuyệt đối format văn bản thô (plain text) được giao.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.3,
+    });
+
+    return {
+      aiReply: `✅ Đã soạn xong hợp đồng cực chuẩn cho phòng ${room.roomNumber}! Tên khách, tiền cọc, giá phòng đều đã được điền tự động. Sếp xem nhé!`,
+      action: 'DISPLAY_CONTRACT',
+      payload: { content: contractResponse.choices[0]?.message?.content || '' },
+    };
+  }
+
+  private async handleCheckEmptyRooms(userId: string) {
+    const empty = await this.prisma.room.findMany({
+      where: { status: 'AVAILABLE', property: { ownerId: userId } },
+    });
+    return {
+      aiReply: `Còn ${empty.length} phòng trống: ${empty.map((r) => r.roomNumber).join(', ')}.`,
+    };
+  }
+
+  private async handleRevenueReport(userId: string) {
+    const paid = await this.prisma.invoice.findMany({
+      where: { status: 'PAID', room: { property: { ownerId: userId } } },
+    });
+    const total = paid.reduce((s, i) => s + i.amount, 0);
+    return { aiReply: `💰 Tổng thu: ${total.toLocaleString('vi-VN')} VNĐ.` };
+  }
+
+  private async handleUnpaidInvoices(userId: string) {
+    const unpaid = await this.prisma.invoice.findMany({
+      where: { status: 'PENDING', room: { property: { ownerId: userId } } },
+      include: { room: true },
+    });
+    return {
+      aiReply: unpaid.length
+        ? `⚠️ Có ${unpaid.length} phòng chưa đóng tiền: ${unpaid.map((i) => i.room.roomNumber).join(', ')}`
+        : '✅ Đã đóng đủ!',
+    };
   }
 }

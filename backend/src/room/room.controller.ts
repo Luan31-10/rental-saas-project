@@ -42,4 +42,10 @@ export class RoomController {
   remove(@Param('id') id: string) {
     return this.roomService.remove(id);
   }
+
+  @UseGuards(AuthGuard)
+  @Post(':id/checkout')
+  checkoutRoom(@Param('id') id: string) {
+    return this.roomService.checkout(id);
+  }
 }

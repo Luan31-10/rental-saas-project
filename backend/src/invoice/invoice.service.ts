@@ -1,15 +1,15 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
-import { PayosService } from '../payos/payos.service'; // 🔥 1. IMPORT PAYOS VÀO ĐÂY SẾP NHÉ
+import { PayosService } from '../payos/payos.service';
 import { Prisma } from '@prisma/client';
 
 export class CreateInvoiceDto {
-  roomId: string;
-  electricity: number;
-  water: number;
-  month: number;
-  year: number;
+  roomId!: string;
+  electricity!: number;
+  water!: number;
+  month!: number;
+  year!: number;
 }
 
 @Injectable()
@@ -36,10 +36,14 @@ export class InvoiceService {
       include: { tenants: { where: { status: 'ACTIVE' } } },
     });
 
-    if (!room) throw new BadRequestException('Không tìm thấy thông tin phòng');
+    if (!room) throw new BadRequestException('Không tìm thấy thông vị phòng');
 
     const totalAmount =
       room.price + data.electricity * 3500 + data.water * 15000;
+
+    // Sinh orderCode tạm nếu sau này sếp muốn dùng lại tính năng create
+    const orderCode =
+      Number(String(Date.now()).slice(-8)) + Math.floor(Math.random() * 1000);
 
     const newInvoice = await this.prisma.invoice.create({
       data: {
@@ -50,13 +54,13 @@ export class InvoiceService {
         month: data.month,
         year: data.year,
         status: 'PENDING',
+        orderCode: orderCode,
       },
     });
 
     if (room.tenants && room.tenants.length > 0) {
       const mainTenant = room.tenants[0];
       if (mainTenant.email) {
-        // 🔥 3. LẤY LINK THANH TOÁN TỪ PAYOS NGAY KHI VỪA TẠO HÓA ĐƠN XONG
         let checkoutUrl = '';
         try {
           const payosRes = await this.payosService.createPaymentLink(
@@ -71,7 +75,6 @@ export class InvoiceService {
           checkoutUrl = `${frontendUrl}/tenants/dashboard`;
         }
 
-        // 🔥 4. TRUYỀN THÊM CÁI checkoutUrl VÀO HÀM GỬI MAIL
         await this.mailService.sendInvoiceEmail(
           mainTenant.email,
           mainTenant.name,
@@ -80,7 +83,7 @@ export class InvoiceService {
           data.electricity,
           data.water,
           totalAmount,
-          checkoutUrl, // <--- Cục vàng ở đây
+          checkoutUrl,
         );
       }
     }
@@ -110,10 +113,10 @@ export class InvoiceService {
       include: {
         room: {
           include: {
+            // 🔥 ĐÃ FIX: Lấy người khách MỚI NHẤT của phòng này (kể cả đã chuyển đi)
             tenants: {
-              where: {
-                status: 'ACTIVE',
-              },
+              orderBy: { createdAt: 'desc' },
+              take: 1,
             },
           },
         },
@@ -138,12 +141,19 @@ export class InvoiceService {
     });
   }
 
-  // 🔥 HÀM NÀY DÙNG ĐỂ BẮN EMAIL NHẮC NỢ
   async sendReminder(id: string) {
     const invoice = await this.prisma.invoice.findUnique({
       where: { id },
       include: {
-        room: { include: { tenants: { where: { status: 'ACTIVE' } } } },
+        room: {
+          include: {
+            // 🔥 ĐÃ FIX: Lấy khách hàng gần nhất
+            tenants: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
+          },
+        },
       },
     });
 
@@ -160,7 +170,6 @@ export class InvoiceService {
       );
     }
 
-    // 🔥 5. CŨNG PHẢI LẤY LINK THANH TOÁN CHO CÁI EMAIL NHẮC NỢ LUÔN
     let checkoutUrl = '';
     try {
       const payosRes = await this.payosService.createPaymentLink(invoice.id);
@@ -189,12 +198,12 @@ export class InvoiceService {
         room: {
           tenants: {
             some: {
-              userAccountId: userId, // Mấu chốt từ file schema của sếp nằm ở đây!
+              userAccountId: userId,
             },
           },
         },
       },
-      orderBy: { createdAt: 'desc' }, // Xếp hóa đơn mới nhất lên đầu
+      orderBy: { createdAt: 'desc' },
     });
   }
 }

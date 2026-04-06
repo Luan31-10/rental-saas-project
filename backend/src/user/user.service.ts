@@ -7,47 +7,81 @@ import { PrismaService } from '../prisma/prisma.service';
 export class UserService {
   constructor(private prisma: PrismaService) {}
 
-  async getProfileByEmail(email: string) {
+  // 1. Lấy profile theo ID (Chuẩn nhất cho AuthGuard)
+  async getProfile(userId: string) {
     const user = await this.prisma.user.findUnique({
-      where: { email },
+      where: { id: userId },
       select: {
         id: true,
-        name: true,
         email: true,
+        name: true,
         phone: true,
         address: true,
+        avatar: true,
         role: true,
-        createdAt: true,
+        plan: true,
+        planExpiryDate: true,
+        bankId: true,
+        bankAccount: true,
+        bankAccountName: true,
         isTwoFactorEnabled: true,
+        createdAt: true,
       },
     });
-    if (!user) throw new NotFoundException('Không tìm thấy tài khoản');
+
+    if (!user) throw new NotFoundException('Không tìm thấy người dùng');
     return user;
   }
 
+  // 2. Cập nhật Profile (Dùng ID thay vì Email để tránh nhầm lẫn)
   async updateProfile(
-    email: string,
+    userId: string, // Đã đổi tên cho sếp dễ hình dung
     updateData: {
-      // Đổi tên biến userId thành email cho đỡ nhầm
       name?: string;
       phone?: string;
       address?: string;
+      avatar?: string | null;
       bankId?: string;
       bankAccount?: string;
       bankAccountName?: string;
     },
   ) {
     return this.prisma.user.update({
-      where: { email: email },
+      where: { id: userId }, // 🔥 ĐÃ FIX: Tìm theo ID
       data: {
         name: updateData.name,
         phone: updateData.phone,
         address: updateData.address,
+        avatar: updateData.avatar, // 🔥 ĐÃ FIX: Đưa avatar vào đây để nó chịu lưu
         bankId: updateData.bankId,
         bankAccount: updateData.bankAccount,
         bankAccountName: updateData.bankAccountName,
       },
     });
+  }
+
+  // 3. Cập nhật riêng Avatar (Dùng ID)
+  async updateAvatar(userId: string, avatarUrl: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatar: avatarUrl },
+    });
+  }
+
+  // 4. Xóa Avatar (Dùng ID)
+  async deleteAvatar(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: { avatar: null },
+    });
+  }
+
+  // --- Các hàm khác giữ nguyên hoặc chỉnh lại ID cho khớp ---
+
+  async getProfileByEmail(email: string) {
+    const user = await this.prisma.user.findUnique({ where: { email } });
+    if (!user) throw new NotFoundException('Không tìm thấy tài khoản');
+    return user;
   }
 
   async create(createUserDto: CreateUserDto) {
@@ -65,9 +99,7 @@ export class UserService {
   }
 
   async findOne(id: string) {
-    return this.prisma.user.findUnique({
-      where: { id },
-    });
+    return this.prisma.user.findUnique({ where: { id } });
   }
 
   async update(id: string, updateUserDto: UpdateUserDto) {
@@ -78,8 +110,6 @@ export class UserService {
   }
 
   async remove(id: string) {
-    return this.prisma.user.delete({
-      where: { id },
-    });
+    return this.prisma.user.delete({ where: { id } });
   }
 }

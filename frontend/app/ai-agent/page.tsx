@@ -49,7 +49,6 @@ export default function AiAgentPage() {
   const [editData, setEditData] = useState<ModalPayload>({});
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 
-  // 🔥 THÊM STATE CHO AI QUÉT ẢNH
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
 
@@ -70,22 +69,33 @@ export default function AiAgentPage() {
 
   const handleSendMessage = async (text: string) => {
     if (!text.trim()) return;
+
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại!');
+      router.push('/login');
+      return;
+    }
+
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content: text };
     const chatHistory = [...messages, userMsg].map(msg => ({ role: msg.role, content: msg.content }));
     setMessages(prev => [...prev, userMsg]);
     setInput('');
     setIsLoading(true);
+
     try {
-      const token = localStorage.getItem('token');
-      const res = await axios.get(API_URL + '/ai/chat',
-        { 
-          params: { messages: chatHistory },
-          headers: { Authorization: `Bearer ${token}` } 
-        }
-      );
+      const res = await axios.post(API_URL + '/ai/chat', 
+      { 
+        messages: chatHistory
+      }, 
+      {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
       const { aiReply, action, payload } = res.data;
       const aiMsg: Message = { id: (Date.now() + 1).toString(), role: 'ai', content: aiReply, action, payload };
       setMessages(prev => [...prev, aiMsg]);
+      
       if (action && action.startsWith('OPEN_MODAL_')) {
         setModalData(payload);
         setEditData(payload || {});
@@ -93,7 +103,13 @@ export default function AiAgentPage() {
       }
     } catch (error) {
       console.error('Lỗi khi gọi API AI:', error);
-      setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'ai', content: 'Xin lỗi sếp, hệ thống đang lỗi hoặc API Key có vấn đề.' }]);
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        alert('⚠️ Phiên đăng nhập của sếp đã hết hạn! Vui lòng đăng nhập lại để tiếp tục.');
+        localStorage.removeItem('token'); 
+        router.push('/login');
+      } else {
+        setMessages(prev => [...prev, { id: (Date.now() + 1).toString(), role: 'ai', content: 'Xin lỗi sếp, hệ thống đang lỗi kết nối tới AI.' }]);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -105,33 +121,50 @@ export default function AiAgentPage() {
   };
 
   const handleSaveData = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      alert('Phiên đăng nhập đã hết hạn!');
+      router.push('/login');
+      return;
+    }
+
     try {
-      const token = localStorage.getItem('token');
       const headers = { Authorization: `Bearer ${token}` };
+      
       if (activeModal === 'OPEN_MODAL_ADD_PROPERTY') {
-        await axios.get(API_URL + '/property', { params: { name: editData.name, address: editData.address }, headers });
+        // 🔥 Đã fix thành axios.post để tạo mới dữ liệu
+        await axios.post(API_URL + '/property', { name: editData.name, address: editData.address }, { headers });
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: `✅ Đã lưu chính thức khu trọ **${editData.name}** vào Database!` }]);
-      } else if (activeModal === 'OPEN_MODAL_ADD_ROOM') {
+      } 
+      else if (activeModal === 'OPEN_MODAL_ADD_ROOM') {
         await axios.post(API_URL + '/room', { roomNumber: String(editData.roomNumber), price: Number(editData.price), area: Number(editData.area), propertyId: editData.propertyId, status: 'AVAILABLE' }, { headers });
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: `✅ Đã lưu phòng **${editData.roomNumber}** vào Database thành công!` }]);
-      } else if (activeModal === 'OPEN_MODAL_ADD_TENANT') {
+      } 
+      else if (activeModal === 'OPEN_MODAL_ADD_TENANT') {
         await axios.post(API_URL + '/tenant', { name: editData.name, phone: editData.phone, email: editData.email, deposit: Number(editData.deposit), startDate: editData.startDate, roomId: editData.roomId, status: 'ACTIVE' }, { headers });
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: `✅ Đã thêm khách hàng **${editData.name}** vào phòng ${editData.roomNumber}!` }]);
-      } else if (activeModal === 'OPEN_MODAL_CREATE_INVOICE') {
+      } 
+      else if (activeModal === 'OPEN_MODAL_CREATE_INVOICE') {
         await axios.post(API_URL + '/invoice', { roomId: editData.roomId, electricity: Number(editData.electricity), water: Number(editData.water), amount: editData.totalAmount, month: editData.month, year: editData.year, status: 'PENDING' }, { headers });
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: `✅ Đã chốt hóa đơn cho phòng **${editData.roomNumber}** thành công!` }]);
-      } else if (activeModal === 'OPEN_MODAL_CHECK_OUT') {
+      } 
+      else if (activeModal === 'OPEN_MODAL_CHECK_OUT') {
         await axios.post(`${API_URL}/room/${editData.roomId}/checkout`, {}, { headers });
         setMessages(prev => [...prev, { id: Date.now().toString(), role: 'ai', content: `✅ Đã hoàn tất thủ tục trả phòng cho phòng **${editData.roomNumber}**!` }]);
       }
       setActiveModal(null);
     } catch (error) {
       console.error('Lỗi khi lưu dữ liệu:', error);
-      alert('⚠️ Có lỗi xảy ra khi gọi API NestJS. Sếp kiểm tra lại log Backend nhé!');
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        alert('⚠️ Phiên đăng nhập hết hạn!');
+        localStorage.removeItem('token');
+        router.push('/login');
+      } else {
+        alert('⚠️ Có lỗi xảy ra khi gọi API. Sếp kiểm tra lại kết nối nhé!');
+      }
     }
   };
 
-  // 🔥 HÀM XỬ LÝ QUÉT ẢNH AI TESSERACT
   const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -160,7 +193,6 @@ export default function AiAgentPage() {
         const numberValue = parseFloat(numberStr);
 
         if (!isNaN(numberValue)) {
-          // Cập nhật con số vào form hóa đơn (ô nhập số điện)
           setEditData(prev => ({ ...prev, electricity: numberValue }));
           alert(`✅ AI quét được số điện là: ${numberValue}`);
         } else {

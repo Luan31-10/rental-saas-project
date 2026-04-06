@@ -1,15 +1,47 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Req,
+  UnauthorizedException,
+  UseGuards,
+} from '@nestjs/common';
 import { AiService } from './ai.service';
+import { Request } from 'express';
+
+// 🔥 Gọi đúng Bảo vệ của nhà sếp
+import { AuthGuard } from '../auth/auth.guard';
+
+interface RequestWithUser extends Request {
+  user?: {
+    id: string;
+    email: string;
+    role: string;
+    sub?: string;
+  };
+}
 
 @Controller('ai')
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 
+  @UseGuards(AuthGuard) // Có Guard này thì req.user mới có dữ liệu!
   @Post('chat')
-  async chat(@Body() body: { messages: { role: string; content: string }[] }) {
-    // 1. Kiểm tra nếu body.messages không tồn tại thì gán bằng mảng rỗng
+  async chat(
+    @Req() req: RequestWithUser,
+    @Body() body: { messages: { role: string; content: string }[] },
+  ) {
     const chatHistory = body.messages || [];
-    // 2. Truyền mảng lịch sử xuống Service
-    return this.aiService.processChat(chatHistory);
+
+    // Lấy ID từ Token đã được giải mã
+    const userId = req.user?.id || req.user?.sub;
+
+    if (!userId) {
+      throw new UnauthorizedException(
+        'Không tìm thấy thông tin xác thực. Vui lòng đăng nhập lại!',
+      );
+    }
+
+    return this.aiService.processChat(chatHistory, String(userId));
   }
 }

@@ -1,598 +1,1893 @@
-'use client';
-import { useEffect, useRef, useState, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
-import * as THREE from 'three';
+"use client";
 
-// ── HOOK: Scroll Reveal ──────────────────────────────────────────────────────
+import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+
+// ── TYPES ────────────────────────────────────────────────────────────────────
+interface Feature {
+  icon: string;
+  num: string;
+  title: string;
+  desc: string;
+  bg: string;
+}
+
+interface PricePlan {
+  plan: string;
+  amount: string;
+  period: string;
+  features: string[];
+  cta: string;
+  featured?: boolean;
+}
+
+// ── HOOKS ────────────────────────────────────────────────────────────────────
 function useScrollReveal() {
   useEffect(() => {
-    const els = document.querySelectorAll<HTMLElement>('.reveal');
-    const observer = new IntersectionObserver(
+    const els = document.querySelectorAll<HTMLElement>(
+      ".reveal, .reveal-left, .reveal-scale",
+    );
+    const obs = new IntersectionObserver(
       (entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            const el = entry.target as HTMLElement;
-            const delay = el.dataset.delay || '0';
-            setTimeout(() => el.classList.add('revealed'), Number(delay));
-            observer.unobserve(el);
+        entries.forEach((e) => {
+          if (e.isIntersecting) {
+            (e.target as HTMLElement).classList.add("visible");
+            obs.unobserve(e.target);
           }
         });
       },
-      { threshold: 0.15 }
+      { threshold: 0.12 },
     );
-    els.forEach((el) => observer.observe(el));
-    return () => observer.disconnect();
+    els.forEach((el) => obs.observe(el));
+    return () => obs.disconnect();
   }, []);
 }
 
-// ── HOOK: Counter Animation ──────────────────────────────────────────────────
-function useCounterAnimation() {
-  const countersStarted = useRef(false);
-
-  useEffect(() => {
-    const statsSection = document.querySelector('.stats-section');
-    if (!statsSection) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && !countersStarted.current) {
-          countersStarted.current = true;
-          const counters = document.querySelectorAll<HTMLElement>('[data-count]');
-          counters.forEach((counter) => {
-            const target = counter.dataset.count || '0';
-            const suffix = counter.dataset.suffix || '';
-            const prefix = counter.dataset.prefix || '';
-            const isDecimal = target.includes('.');
-            const numTarget = parseFloat(target);
-            const duration = 2000;
-            const startTime = performance.now();
-
-            const tick = (now: number) => {
-              const elapsed = now - startTime;
-              const progress = Math.min(elapsed / duration, 1);
-              // Ease out cubic
-              const eased = 1 - Math.pow(1 - progress, 3);
-              const current = numTarget * eased;
-              counter.textContent = prefix + (isDecimal ? current.toFixed(1) : Math.floor(current).toLocaleString('vi-VN')) + suffix;
-              if (progress < 1) requestAnimationFrame(tick);
-              else counter.textContent = prefix + (isDecimal ? numTarget.toFixed(1) : numTarget.toLocaleString('vi-VN')) + suffix;
-            };
-            requestAnimationFrame(tick);
-          });
-          observer.disconnect();
-        }
-      },
-      { threshold: 0.4 }
-    );
-    observer.observe(statsSection);
-    return () => observer.disconnect();
-  }, []);
-}
-
-export default function LandingPage() {
-  const router = useRouter();
-  const mountRef = useRef<HTMLDivElement>(null);
+function useNavScroll() {
   const [scrolled, setScrolled] = useState(false);
-
-  useScrollReveal();
-  useCounterAnimation();
-
-  // Header scroll
   useEffect(() => {
-    const handleScroll = () => setScrolled(window.scrollY > 40);
-    window.addEventListener('scroll', handleScroll, { passive: true });
-    return () => window.removeEventListener('scroll', handleScroll);
+    const onScroll = () => setScrolled(window.scrollY > 40);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
   }, []);
+  return scrolled;
+}
 
-  // ── THREE.JS BACKGROUND ─────────────────────────────────────────────────
+function useCounterAnimation(ref: React.RefObject<HTMLElement | null>) {
   useEffect(() => {
-    if (!mountRef.current) return;
+    if (!ref.current) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0].isIntersecting) return;
+        const counters =
+          ref.current!.querySelectorAll<HTMLElement>("[data-count]");
+        counters.forEach((el) => {
+          const target = Number(el.dataset.count ?? 0);
+          const suffix = el.dataset.suffix ?? "";
+          const dur = 1800;
+          const start = performance.now();
+          const tick = (now: number) => {
+            const p = Math.min((now - start) / dur, 1);
+            const eased = 1 - Math.pow(1 - p, 3);
+            el.textContent =
+              Math.floor(target * eased).toLocaleString("vi-VN") + suffix;
+            if (p < 1) requestAnimationFrame(tick);
+            else el.textContent = target.toLocaleString("vi-VN") + suffix;
+          };
+          requestAnimationFrame(tick);
+        });
+        obs.disconnect();
+      },
+      { threshold: 0.5 },
+    );
+    obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, [ref]);
+}
 
-    const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x03080f, 0.022);
+function useBarAnimation(ref: React.RefObject<HTMLElement | null>) {
+  useEffect(() => {
+    if (!ref.current) return;
+    const obs = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0].isIntersecting) return;
+        ref.current!.querySelectorAll<HTMLElement>(".bar-fill").forEach((b) => {
+          b.style.width = (b.dataset.w ?? "0") + "%";
+        });
+        obs.disconnect();
+      },
+      { threshold: 0.5 },
+    );
+    obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, [ref]);
+}
 
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 200);
-    camera.position.set(0, 8, 28);
+function useCursor() {
+  const dotRef = useRef<HTMLDivElement>(null);
+  const ringRef = useRef<HTMLDivElement>(null);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    mountRef.current.appendChild(renderer.domElement);
+  useEffect(() => {
+    let mx = -100,
+      my = -100,
+      rx = -100,
+      ry = -100;
+    let rafId: number;
 
-    scene.add(new THREE.AmbientLight(0x0a1628, 4));
-    const dirLight = new THREE.DirectionalLight(0x06b6d4, 2);
-    dirLight.position.set(10, 20, 10);
-    scene.add(dirLight);
-
-    // ── Grid ──
-    const gridSize = 100;
-    const gridDivisions = 50;
-    const gridHelper = new THREE.GridHelper(gridSize, gridDivisions, 0x06b6d4, 0x071525);
-    gridHelper.position.y = -0.01;
-    (gridHelper.material as THREE.Material).transparent = true;
-    (gridHelper.material as THREE.Material).opacity = 0.5;
-    scene.add(gridHelper);
-
-    // ── Buildings ──
-    const buildingGroup = new THREE.Group();
-    const buildingData: [number, number, number, number, number, number][] = [
-      [-12, -4, 2.5, 2, 7, 0x0ea5e9], [-8, -2, 2, 2, 5, 0x06b6d4],
-      [-5, -5, 3, 2.5, 9, 0x3b82f6], [-2, -3, 2, 2, 6, 0x2563eb],
-      [1, -5, 3.5, 3, 12, 0x0ea5e9], [5, -3, 2.5, 2, 8, 0x06b6d4],
-      [8, -5, 2, 2, 5, 0x3b82f6], [11, -2, 2.5, 2, 7, 0x0284c7],
-      [-10, -8, 2, 1.5, 4, 0x2563eb], [-3, -8, 2, 1.5, 4, 0x06b6d4],
-      [6, -8, 2, 1.5, 5, 0x0ea5e9], [13, -6, 1.5, 1.5, 3, 0x3b82f6],
-      [-14, -6, 1.5, 1.5, 3, 0x0284c7],
-    ];
-
-    buildingData.forEach(([bx, bz, bw, bd, floors, litColor]) => {
-      const floorH = 0.9;
-      const totalH = floors * floorH;
-      const buildingGeo = new THREE.BoxGeometry(bw, totalH, bd);
-      const building = new THREE.Mesh(buildingGeo, new THREE.MeshStandardMaterial({ color: 0x020617, roughness: 0.2, metalness: 0.8 }));
-      building.position.set(bx, totalH / 2, bz);
-      const edges = new THREE.LineSegments(new THREE.EdgesGeometry(buildingGeo), new THREE.LineBasicMaterial({ color: litColor, transparent: true, opacity: 0.35 }));
-      building.add(edges);
-      buildingGroup.add(building);
-
-      const winCols = Math.floor(bw / 0.7);
-      for (let row = 0; row < floors; row++) {
-        for (let col = 0; col < winCols; col++) {
-          if (Math.random() < 0.35) continue;
-          const isWarm = Math.random() < 0.15;
-          const win = new THREE.Mesh(new THREE.PlaneGeometry(0.35, 0.45), new THREE.MeshBasicMaterial({ color: isWarm ? 0xfcd34d : litColor, transparent: true, opacity: 0.7 + Math.random() * 0.3 }));
-          const wx = -(bw / 2) + 0.4 + col * ((bw - 0.4) / Math.max(winCols - 1, 1));
-          const wy = 0.5 + row * floorH - totalH / 2 + 0.3;
-          win.position.set(bx + wx, wy + totalH / 2, bz + bd / 2 + 0.01);
-          buildingGroup.add(win);
-        }
-      }
-    });
-    scene.add(buildingGroup);
-
-    // ── ENHANCED PARTICLES: two layers ──
-    const createParticleLayer = (count: number, spread: number, size: number, speed: number, blueRatio: number) => {
-      const geo = new THREE.BufferGeometry();
-      const pos = new Float32Array(count * 3);
-      const col = new Float32Array(count * 3);
-      const vel = new Float32Array(count); // individual speeds
-
-      for (let i = 0; i < count * 3; i += 3) {
-        pos[i] = (Math.random() - 0.5) * spread;
-        pos[i + 1] = Math.random() * 22;
-        pos[i + 2] = (Math.random() - 0.5) * spread;
-        vel[i / 3] = speed * (0.5 + Math.random());
-
-        const isBlue = Math.random() > (1 - blueRatio);
-        if (isBlue) { col[i] = 0.02; col[i + 1] = 0.75; col[i + 2] = 0.95; }
-        else if (Math.random() > 0.5) { col[i] = 0.4; col[i + 1] = 0.1; col[i + 2] = 1.0; } // violet
-        else { col[i] = 0.05; col[i + 1] = 0.4; col[i + 2] = 1.0; } // deep blue
-      }
-      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-      geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-
-      const points = new THREE.Points(geo, new THREE.PointsMaterial({
-        size, vertexColors: true,
-        blending: THREE.AdditiveBlending, transparent: true, opacity: 0.75, depthWrite: false,
-      }));
-      scene.add(points);
-      return { geo, vel, speed };
+    const onMove = (e: MouseEvent) => {
+      mx = e.clientX;
+      my = e.clientY;
     };
-
-    const layer1 = createParticleLayer(900, 65, 0.18, 22, 0.7);
-    const layer2 = createParticleLayer(300, 40, 0.35, 10, 0.5); // larger, slower "stars"
-
-    // ── GLOW ORBS: 3 floating color spheres ──
-    const orbData = [
-      { color: 0x06b6d4, x: -8, y: 6, z: -5 },
-      { color: 0x3b82f6, x: 5, y: 10, z: -8 },
-      { color: 0x8b5cf6, x: 12, y: 4, z: -3 },
-    ];
-    const orbs = orbData.map(({ color, x, y, z }) => {
-      const mesh = new THREE.Mesh(
-        new THREE.SphereGeometry(1.2, 16, 16),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.12 })
-      );
-      mesh.position.set(x, y, z);
-      // Glow halo
-      const halo = new THREE.Mesh(
-        new THREE.SphereGeometry(2.5, 16, 16),
-        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.04, side: THREE.BackSide })
-      );
-      mesh.add(halo);
-      scene.add(mesh);
-      return mesh;
-    });
-
-    let mouseX = 0, mouseY = 0, targetScroll = 0, smoothScroll = 0;
-    const handleMouseMove = (e: MouseEvent) => {
-      mouseX = (e.clientX / window.innerWidth) * 2 - 1;
-      mouseY = -(e.clientY / window.innerHeight) * 2 + 1;
-    };
-    const handleScroll3D = () => { targetScroll = window.scrollY; };
-    window.addEventListener('mousemove', handleMouseMove, { passive: true });
-    window.addEventListener('scroll', handleScroll3D, { passive: true });
-
-    const clock = new THREE.Clock();
-    let animId: number;
+    document.addEventListener("mousemove", onMove, { passive: true });
 
     const animate = () => {
-      animId = requestAnimationFrame(animate);
-      const delta = clock.getDelta();
-      const time = clock.getElapsedTime();
-
-      gridHelper.position.z = (time * 15) % (gridSize / gridDivisions);
-
-      const lerpFactor = 1 - Math.exp(-8 * delta);
-      smoothScroll += (targetScroll - smoothScroll) * lerpFactor;
-
-      const scrollFactor = smoothScroll * 0.015;
-      const targetZ = 28 - scrollFactor;
-      const targetY = Math.max(1.5, 8 - smoothScroll * 0.004);
-      const targetX = mouseX * 5 + Math.sin(time * 0.5) * 2;
-
-      camera.position.x += (targetX - camera.position.x) * lerpFactor * 1.5;
-      camera.position.y += ((targetY + mouseY * 2 + Math.sin(time * 0.3) * 1) - camera.position.y) * lerpFactor * 1.5;
-      camera.position.z = targetZ;
-      camera.lookAt(0, Math.max(2, 4 - smoothScroll * 0.002), targetZ - 10);
-
-      // Layer 1 particles
-      const p1 = layer1.geo.attributes.position.array as Float32Array;
-      for (let i = 2; i < p1.length; i += 3) {
-        p1[i] += layer1.vel[Math.floor(i / 3)] * delta;
-        if (p1[i] > camera.position.z + 5) p1[i] = camera.position.z - 55;
+      if (dotRef.current) {
+        dotRef.current.style.left = mx + "px";
+        dotRef.current.style.top = my + "px";
       }
-      layer1.geo.attributes.position.needsUpdate = true;
-
-      // Layer 2 particles (drift sideways too)
-      const p2 = layer2.geo.attributes.position.array as Float32Array;
-      for (let i = 0; i < p2.length; i += 3) {
-        p2[i + 2] += layer2.vel[Math.floor(i / 3)] * delta;
-        p2[i] += Math.sin(time * 0.3 + i) * 0.005;
-        if (p2[i + 2] > camera.position.z + 5) p2[i + 2] = camera.position.z - 45;
+      rx += (mx - rx) * 0.14;
+      ry += (my - ry) * 0.14;
+      if (ringRef.current) {
+        ringRef.current.style.left = rx + "px";
+        ringRef.current.style.top = ry + "px";
       }
-      layer2.geo.attributes.position.needsUpdate = true;
-
-      // Animate orbs: float + pulse opacity
-      orbs.forEach((orb, i) => {
-        orb.position.y = orbData[i].y + Math.sin(time * 0.6 + i * 2) * 1.5;
-        const mat = orb.material as THREE.MeshBasicMaterial;
-        mat.opacity = 0.10 + Math.sin(time * 1.2 + i) * 0.06;
-      });
-
-      renderer.render(scene, camera);
+      rafId = requestAnimationFrame(animate);
     };
-    animate();
+    rafId = requestAnimationFrame(animate);
 
-    const handleResize = () => {
-      camera.aspect = window.innerWidth / window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
-    };
-    window.addEventListener('resize', handleResize);
-
-    const currentMount = mountRef.current;
     return () => {
-      window.removeEventListener('resize', handleResize);
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('scroll', handleScroll3D);
-      cancelAnimationFrame(animId);
-      if (currentMount) currentMount.removeChild(renderer.domElement);
-      scene.traverse((obj: THREE.Object3D) => {
-        if (obj instanceof THREE.Mesh || obj instanceof THREE.Line || obj instanceof THREE.Points) {
-          obj.geometry?.dispose();
-          if (Array.isArray(obj.material)) obj.material.forEach((m: THREE.Material) => m.dispose());
-          else (obj.material as THREE.Material)?.dispose();
-        }
-      });
-      renderer.dispose();
+      document.removeEventListener("mousemove", onMove);
+      cancelAnimationFrame(rafId);
     };
   }, []);
 
-  const features = [
-    { icon: '⚡', accent: '#06b6d4', title: 'Thu tiền tự động', desc: 'Sinh mã VietQR cho từng phòng. Tự động xác nhận và ghi sổ khi tiền vào tài khoản — không cần làm gì thêm.' },
-    { icon: '🏢', accent: '#3b82f6', title: 'Đa khu vực', desc: 'Quản lý hàng trăm phòng ở nhiều quận huyện trên một bảng điều khiển duy nhất, trực quan và nhanh.' },
-    { icon: '🤖', accent: '#8b5cf6', title: 'Trợ lý AI', desc: 'AI tự động nhắc nợ, soạn hợp đồng, trả lời khách thuê 24/7. Như có thêm một nhân viên không bao giờ nghỉ.' },
-    { icon: '📊', accent: '#f59e0b', title: 'Báo cáo thời gian thực', desc: 'Lợi nhuận, tỷ lệ lấp đầy, dòng tiền — cập nhật tức thì. Mọi con số đều trong tầm tay.' },
-  ];
+  return { dotRef, ringRef };
+}
+
+// ── DATA ─────────────────────────────────────────────────────────────────────
+const FEATURES: Feature[] = [
+  {
+    icon: "⚡",
+    num: "01",
+    bg: "#ccfbf1",
+    title: "Thu tiền tự động",
+    desc: "Sinh mã VietQR riêng cho từng phòng. Khi tiền về tài khoản, hệ thống tự động xác nhận, ghi sổ và gửi biên lai — không cần làm gì thêm.",
+  },
+  {
+    icon: "🏢",
+    num: "02",
+    bg: "#dbeafe",
+    title: "Đa khu vực, một bảng điều khiển",
+    desc: "Quản lý hàng trăm phòng trải dài nhiều quận huyện trên một giao diện duy nhất. Trực quan, nhanh chóng, không bao giờ bị lạc trong mớ sổ sách.",
+  },
+  {
+    icon: "🤖",
+    num: "03",
+    bg: "#ede9fe",
+    title: "Trợ lý AI không bao giờ nghỉ",
+    desc: "AI tự động nhắc nợ, soạn hợp đồng, trả lời khách thuê bất cứ lúc nào. Như có thêm một nhân viên chăm chỉ làm việc 24/7 không cần lương.",
+  },
+  {
+    icon: "📊",
+    num: "04",
+    bg: "#fef9c3",
+    title: "Báo cáo tức thì",
+    desc: "Lợi nhuận, tỷ lệ lấp đầy, dòng tiền — cập nhật ngay khi có giao dịch mới. Mọi con số đều trong tầm tay, mọi lúc mọi nơi.",
+  },
+];
+
+const PLANS: PricePlan[] = [
+  {
+    plan: "Miễn phí",
+    amount: "0đ",
+    period: "Mãi mãi",
+    features: [
+      "Tối đa 10 phòng",
+      "Thu tiền thủ công",
+      "Báo cáo cơ bản",
+      "Hỗ trợ email",
+    ],
+    cta: "Bắt đầu ngay",
+  },
+  {
+    plan: "Chuyên nghiệp",
+    amount: "299k",
+    period: "/ tháng",
+    features: [
+      "Không giới hạn phòng",
+      "Thu tiền tự động VietQR",
+      "Trợ lý AI",
+      "Báo cáo nâng cao",
+      "Hỗ trợ 24/7",
+    ],
+    cta: "Dùng thử 14 ngày miễn phí",
+    featured: true,
+  },
+  {
+    plan: "Doanh nghiệp",
+    amount: "999k",
+    period: "/ tháng",
+    features: [
+      "Nhiều tài khoản",
+      "API tích hợp",
+      "Tùy chỉnh theo yêu cầu",
+      "Dedicated support",
+    ],
+    cta: "Liên hệ tư vấn",
+  },
+];
+
+const MARQUEE_ITEMS = [
+  "Thu tiền tự động",
+  "Hợp đồng thông minh",
+  "Trợ lý AI 24/7",
+  "Báo cáo thời gian thực",
+  "VietQR tích hợp",
+  "Quản lý đa khu vực",
+];
+
+// ── GLOBAL STYLES (injected once) ────────────────────────────────────────────
+const GLOBAL_CSS = `
+@import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap');
+
+:root {
+  --ink: #0b0f0e; --ink2: #2e3532; --ink3: #6b7570;
+  --paper: #f5f0e8; --paper2: #ede7d8; --paper3: #e2dace;
+  --teal: #0d9488; --teal-lt: #ccfbf1;
+  --amber: #d97706;
+  --serif: "DM Serif Display", Georgia, serif;
+  --sans: "DM Sans", system-ui, sans-serif;
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--sans);
+  background: var(--paper);
+  color: var(--ink);
+  overflow-x: hidden;
+  cursor: none;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: var(--paper2); }
+::-webkit-scrollbar-thumb { background: var(--teal); border-radius: 2px; }
+
+/* Noise overlay */
+body::after {
+  content: '';
+  position: fixed; inset: 0; z-index: 9997; pointer-events: none;
+  opacity: 0.018;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* Cursor */
+.cursor-dot {
+  position: fixed; top: 0; left: 0; z-index: 9999;
+  width: 8px; height: 8px; background: var(--teal); border-radius: 50%;
+  pointer-events: none; transform: translate(-50%, -50%);
+  transition: background 0.2s;
+}
+.cursor-ring {
+  position: fixed; top: 0; left: 0; z-index: 9998;
+  width: 36px; height: 36px;
+  border: 1.5px solid var(--teal); border-radius: 50%;
+  pointer-events: none; transform: translate(-50%, -50%);
+  transition: width 0.25s var(--ease-out), height 0.25s var(--ease-out), opacity 0.25s;
+  opacity: 0.5;
+}
+
+/* Scroll reveal */
+.reveal {
+  opacity: 0; transform: translateY(28px);
+  transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out);
+}
+.reveal.visible { opacity: 1; transform: none; }
+.reveal-scale {
+  opacity: 0; transform: scale(0.94);
+  transition: opacity 0.8s var(--ease-out), transform 0.8s var(--ease-out);
+}
+.reveal-scale.visible { opacity: 1; transform: scale(1); }
+
+/* Hero circle */
+@keyframes slowRotate { to { transform: rotate(360deg); } }
+.hero-circle { animation: slowRotate 60s linear infinite; }
+
+/* Hero card float */
+@keyframes floatCard { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-10px)} }
+.float-card { animation: floatCard 5s ease-in-out infinite; }
+
+/* Pill floats */
+@keyframes floatP1 { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-8px)} }
+@keyframes floatP2 { 0%,100%{transform:translateY(0)} 50%{transform:translateY(8px)} }
+.pill-p1 { animation: floatP1 4s 0.5s ease-in-out infinite; }
+.pill-p2 { animation: floatP2 4.5s 1s ease-in-out infinite; }
+
+/* Bar fill transition */
+.bar-fill { height: 100%; background: var(--teal); border-radius: 3px; transition: width 1.5s var(--ease-out); width: 0; }
+
+/* Marquee */
+@keyframes marquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.marquee-track { animation: marquee 22s linear infinite; }
+
+/* Avatar float */
+@keyframes avatarFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-3px)} }
+
+/* CTA pulse rings */
+@keyframes pulseRing {
+  0%,100%{opacity:0.5; transform:translate(-50%,-50%) scale(1)}
+  50%{opacity:0.2; transform:translate(-50%,-50%) scale(1.05)}
+}
+
+/* Feature card hover */
+.feat-item { transition: background 0.3s, border-color 0.3s, transform 0.3s var(--ease-spring), box-shadow 0.3s; cursor: none; }
+.feat-item:hover { background: white; border-color: var(--paper3); transform: translateX(6px); box-shadow: 0 10px 40px rgba(11,15,14,0.07); }
+.feat-item:hover .feat-icon-wrap { transform: scale(1.15) rotate(-5deg); }
+.feat-icon-wrap { transition: transform 0.3s var(--ease-spring); }
+
+/* Step card hover */
+.step-card { transition: background 0.3s, box-shadow 0.3s; cursor: none; }
+.step-card:hover { background: white; box-shadow: 0 8px 32px rgba(11,15,14,0.06); }
+.step-card:hover .step-num { background: var(--teal); border-color: var(--teal); color: white; }
+.step-num { transition: background 0.3s, border-color 0.3s, color 0.3s; }
+
+/* Price card hover */
+.price-card { transition: transform 0.3s var(--ease-spring), box-shadow 0.3s; cursor: none; }
+.price-card:hover { transform: translateY(-8px); box-shadow: 0 24px 60px rgba(11,15,14,0.1); }
+.price-card.featured { transform: scale(1.04); }
+.price-card.featured:hover { transform: scale(1.04) translateY(-8px); }
+
+/* Button transitions */
+.btn-primary { transition: transform 0.25s var(--ease-spring), box-shadow 0.25s; }
+.btn-primary:hover { transform: translateY(-4px) scale(1.02); box-shadow: 0 12px 40px rgba(11,15,14,0.25); }
+.btn-solid { transition: background 0.2s, transform 0.2s var(--ease-spring); cursor: none; }
+.btn-solid:hover { background: #2e3532; transform: scale(1.04); }
+.btn-outline { transition: border-color 0.2s; cursor: none; }
+.btn-outline:hover { border-color: var(--ink); }
+.btn-ghost { transition: color 0.2s, text-decoration-color 0.2s; cursor: none; }
+.btn-ghost:hover { color: var(--ink); text-decoration-color: rgba(107,117,112,0.5); }
+.btn-price { transition: background 0.2s, transform 0.2s var(--ease-spring); }
+.btn-price:hover { background: var(--paper); transform: scale(1.02); }
+.btn-feat { transition: background 0.2s; }
+.btn-feat:hover { background: #0b8078 !important; }
+
+/* Nav link */
+.nav-link { transition: color 0.2s; cursor: none; }
+.nav-link:hover { color: var(--ink); }
+
+/* Footer link */
+.footer-link { transition: color 0.2s; cursor: none; }
+.footer-link:hover { color: #f5f0e8; }
+
+/* Pulse dot */
+@keyframes pulseDot {
+  0%,100%{box-shadow:0 0 0 0 rgba(13,148,136,0.7)}
+  50%{box-shadow:0 0 0 6px rgba(13,148,136,0)}
+}
+
+@media (max-width: 960px) {
+  body { cursor: auto; }
+  .cursor-dot, .cursor-ring { display: none; }
+  .hero-grid { grid-template-columns: 1fr !important; }
+  .features-grid-wrap { grid-template-columns: 1fr !important; }
+  .features-sticky { position: static !important; }
+  .steps-grid { grid-template-columns: 1fr !important; max-width: 420px !important; }
+  .steps-line { display: none !important; }
+  .pricing-grid { grid-template-columns: 1fr !important; max-width: 380px !important; }
+  .price-card.featured { transform: none !important; }
+  .price-card.featured:hover { transform: translateY(-8px) !important; }
+  .footer-grid { grid-template-columns: 1fr 1fr !important; }
+}
+@media (max-width: 600px) {
+  .nav-links-wrap { display: none !important; }
+  .footer-grid { grid-template-columns: 1fr !important; }
+}
+`;
+
+// ── COMPONENT ─────────────────────────────────────────────────────────────────
+export default function LandingPage() {
+  const router = useRouter();
+  const scrolled = useNavScroll();
+  const { dotRef, ringRef } = useCursor();
+  const trustRef = useRef<HTMLDivElement>(null);
+  const barsRef = useRef<HTMLDivElement>(null);
+
+  useScrollReveal();
+  useCounterAnimation(trustRef);
+  useBarAnimation(barsRef);
+
+  // inject global styles once
+  useEffect(() => {
+    const id = "landing-global-styles";
+    if (document.getElementById(id)) return;
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = GLOBAL_CSS;
+    document.head.appendChild(style);
+    return () => {
+      document.getElementById(id)?.remove();
+    };
+  }, []);
 
   return (
-    <div style={{ minHeight: '100vh', backgroundColor: '#03080f', color: '#f0f6ff', fontFamily: '"Be Vietnam Pro", "Nunito", sans-serif', overflowX: 'hidden' }}>
+    <>
+      {/* Custom cursor */}
+      <div ref={dotRef} className="cursor-dot" />
+      <div ref={ringRef} className="cursor-ring" />
 
-      <div ref={mountRef} style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', zIndex: 0, pointerEvents: 'none' }} />
-      <div style={{ position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none', background: 'linear-gradient(to bottom, rgba(3,8,15,0.35) 0%, rgba(3,8,15,0.15) 35%, rgba(3,8,15,0.65) 70%, rgba(3,8,15,0.95) 100%)' }} />
-
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800;900&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-
-        /* ── SCROLL REVEAL ── */
-        .reveal {
-          opacity: 0;
-          transform: translateY(36px);
-          transition: opacity 0.75s cubic-bezier(0.22,1,0.36,1), transform 0.75s cubic-bezier(0.22,1,0.36,1);
-        }
-        .reveal.revealed { opacity: 1; transform: translateY(0); }
-        .reveal-left  { opacity: 0; transform: translateX(-40px); transition: opacity 0.75s cubic-bezier(0.22,1,0.36,1), transform 0.75s cubic-bezier(0.22,1,0.36,1); }
-        .reveal-left.revealed  { opacity: 1; transform: translateX(0); }
-        .reveal-scale { opacity: 0; transform: scale(0.88); transition: opacity 0.65s cubic-bezier(0.22,1,0.36,1), transform 0.65s cubic-bezier(0.22,1,0.36,1); }
-        .reveal-scale.revealed { opacity: 1; transform: scale(1); }
-
-        /* ── BUTTONS ── */
-        .btn-primary {
-          background: linear-gradient(135deg, #0891b2 0%, #2563eb 100%);
-          color: #fff; border: none; padding: 15px 36px; border-radius: 12px;
-          font-weight: 700; font-size: 16px; font-family: inherit;
-          cursor: pointer; letter-spacing: -0.2px; transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1);
-          box-shadow: 0 0 30px rgba(8,145,178,0.3), 0 4px 20px rgba(0,0,0,0.4);
-          position: relative; overflow: hidden;
-        }
-        .btn-primary::after {
-          content: ''; position: absolute; inset: 0;
-          background: linear-gradient(135deg, rgba(255,255,255,0.15), transparent);
-          opacity: 0; transition: opacity 0.3s;
-        }
-        .btn-primary:hover { transform: translateY(-4px) scale(1.03); box-shadow: 0 0 60px rgba(8,145,178,0.55), 0 12px 36px rgba(0,0,0,0.45); }
-        .btn-primary:hover::after { opacity: 1; }
-        .btn-primary:active { transform: translateY(-1px) scale(1.01); }
-
-        .btn-ghost {
-          background: rgba(255,255,255,0.05); color: rgba(240,246,255,0.75);
-          border: 1px solid rgba(255,255,255,0.1); padding: 15px 36px; border-radius: 12px;
-          font-weight: 600; font-size: 16px; font-family: inherit;
-          cursor: pointer; transition: all 0.3s cubic-bezier(0.34,1.56,0.64,1); backdrop-filter: blur(10px);
-          position: relative; overflow: hidden;
-        }
-        .btn-ghost:hover {
-          background: rgba(8,145,178,0.12); border-color: rgba(8,145,178,0.45);
-          color: #f0f6ff; transform: translateY(-4px) scale(1.02);
-          box-shadow: 0 0 30px rgba(8,145,178,0.2), 0 8px 24px rgba(0,0,0,0.35);
-        }
-
-        /* ── BADGE ── */
-        .badge {
-          display: inline-flex; align-items: center; gap: 8px;
-          background: rgba(8,145,178,0.1); border: 1px solid rgba(8,145,178,0.25);
-          color: #22d3ee; padding: 7px 18px; border-radius: 100px;
-          font-size: 12px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-        }
-        .badge-dot { width: 7px; height: 7px; border-radius: 50%; background: #06b6d4; animation: pulse 2s infinite; flex-shrink: 0; }
-        @keyframes pulse {
-          0%, 100% { box-shadow: 0 0 0 0 rgba(6,182,212,0.7); }
-          50% { box-shadow: 0 0 0 6px rgba(6,182,212,0); }
-        }
-
-        /* ── TYPOGRAPHY ── */
-        .hero-title { font-size: clamp(44px, 6.5vw, 78px); font-weight: 900; line-height: 1.1; letter-spacing: -1.5px; }
-        .gradient-text { background: linear-gradient(90deg, #bae6fd 0%, #38bdf8 40%, #06b6d4 80%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .ez-word { background: linear-gradient(90deg, #06b6d4, #3b82f6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-
-        /* ── STAT ITEM ── */
-        .stat-item { text-align: center; padding: 0 36px; position: relative; }
-        .stat-item::after { content: ''; position: absolute; right: 0; top: 15%; height: 70%; width: 1px; background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.07), transparent); }
-        .stat-item:last-child::after { display: none; }
-        .stat-value { font-size: 44px; font-weight: 900; letter-spacing: -2px; background: linear-gradient(135deg, #e0f2fe, #7dd3fc); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; line-height: 1; min-height: 52px; display: flex; align-items: center; justify-content: center; }
-
-        /* ── FEATURE CARD — enhanced hover ── */
-        .feature-card {
-          position: relative; background: rgba(7,15,28,0.7); border: 1px solid rgba(255,255,255,0.07);
-          border-radius: 20px; padding: 36px; transition: all 0.4s cubic-bezier(0.34,1.56,0.64,1);
-          backdrop-filter: blur(20px); overflow: hidden; cursor: default;
-        }
-        .feature-card:hover {
-          transform: translateY(-12px) scale(1.02);
-          border-color: rgba(255,255,255,0.15);
-          box-shadow: 0 32px 64px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.06);
-        }
-        .card-glow { position: absolute; inset: 0; opacity: 0; transition: opacity 0.4s; pointer-events: none; border-radius: 20px; }
-        .feature-card:hover .card-glow { opacity: 1; }
-        .card-icon-wrap { transition: transform 0.4s cubic-bezier(0.34,1.56,0.64,1); }
-        .feature-card:hover .card-icon-wrap { transform: scale(1.15) rotate(-5deg); }
-
-        /* ── LEARN MORE LINK ── */
-        .learn-more {
-          display: inline-flex; align-items: center; gap: 6px;
-          font-size: 13px; font-weight: 600; cursor: pointer;
-          transition: gap 0.25s, opacity 0.25s;
-        }
-        .feature-card:hover .learn-more { gap: 10px; opacity: 1 !important; }
-
-        /* ── GLOW BORDER CARD (CTA) ── */
-        .glow-border {
-          padding: 1.5px; border-radius: 24px;
-          background: linear-gradient(135deg, rgba(8,145,178,0.5), rgba(37,99,235,0.2), rgba(124,58,237,0.3));
-          transition: background 0.4s;
-          display: inline-block; width: 100%;
-        }
-        .glow-border:hover {
-          background: linear-gradient(135deg, rgba(8,145,178,0.8), rgba(37,99,235,0.4), rgba(124,58,237,0.5));
-          box-shadow: 0 0 80px rgba(8,145,178,0.25);
-        }
-
-        /* ── NAV ── */
-        .nav-btn { background: rgba(8,145,178,0.15); border: 1px solid rgba(8,145,178,0.3); color: #22d3ee; padding: 9px 20px; border-radius: 9px; font-weight: 700; font-size: 14px; font-family: inherit; cursor: pointer; transition: all 0.25s; white-space: nowrap; }
-        .nav-btn:hover { background: rgba(8,145,178,0.28); box-shadow: 0 0 28px rgba(8,145,178,0.35); transform: translateY(-2px); }
-        .nav-link-btn { background: none; border: none; color: rgba(240,246,255,0.55); font-size: 14px; font-weight: 500; font-family: inherit; cursor: pointer; transition: color 0.2s; }
-        .nav-link-btn:hover { color: #f0f6ff; }
-
-        .divider { height: 1px; background: linear-gradient(90deg, transparent, rgba(255,255,255,0.06), transparent); }
-
-        /* ── HERO ENTRY ── */
-        @keyframes fadeUp { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: translateY(0); } }
-        .fade-up { animation: fadeUp 0.75s ease both; }
-        .d1 { animation-delay: 0.05s; } .d2 { animation-delay: 0.15s; }
-        .d3 { animation-delay: 0.25s; } .d4 { animation-delay: 0.4s; }
-        .d5 { animation-delay: 0.55s; }
-
-        /* ── AVATAR PULSE ── */
-        @keyframes avatarFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-3px)} }
-        .avatar-item { animation: avatarFloat 3s ease-in-out infinite; }
-        .avatar-item:nth-child(2){animation-delay:0.3s}
-        .avatar-item:nth-child(3){animation-delay:0.6s}
-        .avatar-item:nth-child(4){animation-delay:0.9s}
-        .avatar-item:nth-child(5){animation-delay:1.2s}
-
-        /* ── FOOTER LINK ── */
-        .footer-link { color: rgba(240,246,255,0.3); font-size: 13px; text-decoration: none; transition: color 0.2s; }
-        .footer-link:hover { color: rgba(240,246,255,0.7); }
-      `}</style>
-
-      <div style={{ position: 'relative', zIndex: 1 }}>
-
-        {/* ── HEADER ── */}
-        <header style={{
-          position: 'fixed', top: 16, left: '50%', transform: 'translateX(-50%)',
-          width: 'min(calc(100% - 40px), 1080px)', zIndex: 100,
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          padding: '12px 24px',
-          background: scrolled ? 'rgba(3,8,15,0.88)' : 'rgba(3,8,15,0.45)',
-          backdropFilter: 'blur(20px)',
-          border: `1px solid ${scrolled ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.05)'}`,
-          borderRadius: 14, transition: 'all 0.35s cubic-bezier(0.4,0,0.2,1)',
-          boxShadow: scrolled ? '0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(6,182,212,0.05)' : 'none',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #06b6d4, #2563eb)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 15, color: '#fff', boxShadow: '0 0 20px rgba(6,182,212,0.5)' }}>L</div>
-            <span style={{ fontWeight: 800, fontSize: 17, letterSpacing: '-0.5px' }}>LuanEZ</span>
+      {/* ── NAV ── */}
+      <nav
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 100,
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          padding: scrolled ? "14px 5%" : "22px 5%",
+          background: scrolled ? "rgba(245,240,232,0.92)" : "transparent",
+          backdropFilter: scrolled ? "blur(16px)" : "none",
+          borderBottom: `1px solid ${scrolled ? "#e2dace" : "transparent"}`,
+          transition: "all 0.4s cubic-bezier(0.22,1,0.36,1)",
+          boxShadow: scrolled ? "0 2px 20px rgba(11,15,14,0.06)" : "none",
+        }}
+      >
+        <a
+          href="#"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            textDecoration: "none",
+            cursor: "none",
+          }}
+        >
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              background: "#0b0f0e",
+              borderRadius: 10,
+              display: "grid",
+              placeItems: "center",
+              fontFamily: "var(--serif)",
+              fontSize: 20,
+              color: "#f5f0e8",
+              fontStyle: "italic",
+            }}
+          >
+            L
           </div>
-          <nav style={{ display: 'flex', gap: 28 }}>
-            {['Tính năng', 'Báo cáo', 'Giá cả'].map(t => (
-              <button key={t} className="nav-link-btn">{t}</button>
-            ))}
-          </nav>
-          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <button className="nav-link-btn" onClick={() => router.push('/login')}>Đăng nhập</button>
-            <button className="nav-btn" onClick={() => router.push('/dashboard')}>Dùng thử miễn phí →</button>
-          </div>
-        </header>
+          <span
+            style={{
+              fontFamily: "var(--serif)",
+              fontSize: 22,
+              color: "#0b0f0e",
+              letterSpacing: "-0.5px",
+            }}
+          >
+            LuanEZ
+          </span>
+        </a>
 
-        {/* ── HERO ── */}
-        <section style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '140px 5% 80px', textAlign: 'center' }}>
-          <div style={{ maxWidth: 820, margin: '0 auto' }}>
-            <div className="badge fade-up d1" style={{ marginBottom: 28 }}>
-              <span className="badge-dot" /> Giải pháp quản lý nhà trọ tại Việt Nam
-            </div>
-            <h1 className="hero-title fade-up d2" style={{ marginBottom: 24 }}>
-              Quản lý phòng trọ<br /> chưa bao giờ <span className="ez-word">EZ</span> đến thế.
-            </h1>
-            <p className="fade-up d3" style={{ fontSize: 17, color: 'rgba(240,246,255,0.5)', lineHeight: 1.8, maxWidth: 500, margin: '0 auto 44px', fontWeight: 400 }}>
-              Tự động hóa thu tiền, hợp đồng, nhắc nợ. Giải phóng bạn khỏi sổ sách để tập trung mở rộng quy mô.
-            </p>
-            <div className="fade-up d4" style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button className="btn-primary" onClick={() => router.push('/dashboard')}>Bắt đầu miễn phí</button>
-              <button className="btn-ghost">▶ Xem demo 2 phút</button>
-            </div>
-            <div className="fade-up d5" style={{ marginTop: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
-              <div style={{ display: 'flex' }}>
-                {['#0891b2', '#2563eb', '#7c3aed', '#db2777', '#d97706'].map((c, i) => (
-                  <div key={i} className="avatar-item" style={{ width: 30, height: 30, borderRadius: '50%', background: `linear-gradient(135deg, ${c}, ${c}88)`, border: '2px solid #03080f', marginLeft: i === 0 ? 0 : -9, fontSize: 11, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 700 }}>
-                    {['V', 'T', 'L', 'M', 'N'][i]}
+        <ul
+          className="nav-links-wrap"
+          style={{ display: "flex", gap: 32, listStyle: "none" }}
+        >
+          {["Tính năng", "Cách dùng", "Giá cả"].map((t, i) => (
+            <li key={t}>
+              <a
+                href={["#features", "#workflow", "#pricing"][i]}
+                className="nav-link"
+                style={{
+                  fontSize: 14,
+                  color: "#6b7570",
+                  textDecoration: "none",
+                  fontWeight: 400,
+                }}
+              >
+                {t}
+              </a>
+            </li>
+          ))}
+        </ul>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <button
+            className="btn-outline"
+            onClick={() => router.push("/login")}
+            style={{
+              fontFamily: "var(--sans)",
+              fontSize: 14,
+              fontWeight: 500,
+              color: "#0b0f0e",
+              background: "transparent",
+              border: "1px solid #6b7570",
+              borderRadius: 100,
+              padding: "9px 22px",
+            }}
+          >
+            Đăng nhập
+          </button>
+          <button
+            className="btn-solid"
+            onClick={() => router.push("/login")}
+            style={{
+              fontFamily: "var(--sans)",
+              fontSize: 14,
+              fontWeight: 500,
+              color: "#f5f0e8",
+              background: "#0b0f0e",
+              border: "1px solid #0b0f0e",
+              borderRadius: 100,
+              padding: "9px 22px",
+            }}
+          >
+            Thử miễn phí →
+          </button>
+        </div>
+      </nav>
+
+      {/* ── HERO ── */}
+      <section
+        className="hero-grid"
+        style={{
+          minHeight: "100vh",
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          alignItems: "center",
+          padding: "100px 5% 60px",
+          gap: 60,
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        {/* decorative ring */}
+        <div
+          className="hero-circle"
+          style={{
+            position: "absolute",
+            width: 700,
+            height: 700,
+            borderRadius: "50%",
+            border: "1px solid #e2dace",
+            top: -150,
+            right: -200,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              position: "absolute",
+              inset: 40,
+              borderRadius: "50%",
+              border: "1px solid #e2dace",
+            }}
+          />
+        </div>
+
+        {/* Left */}
+        <div>
+          <div
+            style={{
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 10,
+              fontSize: 12,
+              fontWeight: 500,
+              letterSpacing: "0.12em",
+              textTransform: "uppercase",
+              color: "#0d9488",
+              marginBottom: 28,
+            }}
+          >
+            <span
+              style={{
+                width: 32,
+                height: 1,
+                background: "#0d9488",
+                display: "block",
+              }}
+            />
+            Giải pháp quản lý nhà trọ Việt Nam
+          </div>
+
+          <h1
+            style={{
+              fontFamily: "var(--serif)",
+              fontSize: "clamp(52px, 6vw, 84px)",
+              lineHeight: 1.0,
+              letterSpacing: "-1px",
+              marginBottom: 28,
+            }}
+          >
+            Quản lý
+            <br />
+            nhà trọ —<br />
+            <em style={{ fontStyle: "italic", color: "#0d9488" }}>đơn giản</em>
+            <br />
+            như EZ.
+          </h1>
+
+          <p
+            style={{
+              fontSize: 17,
+              color: "#6b7570",
+              lineHeight: 1.75,
+              maxWidth: 440,
+              marginBottom: 44,
+              fontWeight: 300,
+            }}
+          >
+            Tự động hóa thu tiền, hợp đồng, nhắc nợ. Trợ lý AI làm việc 24/7 để
+            bạn tập trung mở rộng quy mô thay vì xử lý sổ sách.
+          </p>
+
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 20,
+              flexWrap: "wrap",
+            }}
+          >
+            <button
+              className="btn-primary"
+              onClick={() => router.push("/dashboard")}
+              style={{
+                fontFamily: "var(--sans)",
+                fontSize: 16,
+                fontWeight: 500,
+                color: "#f5f0e8",
+                background: "#0b0f0e",
+                border: "none",
+                borderRadius: 14,
+                padding: "16px 36px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                boxShadow: "0 4px 24px rgba(11,15,14,0.18)",
+              }}
+            >
+              Bắt đầu miễn phí
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path
+                  d="M3 8h10m-4-4 4 4-4 4"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <button
+              className="btn-ghost"
+              style={{
+                fontFamily: "var(--sans)",
+                fontSize: 15,
+                color: "#6b7570",
+                background: "none",
+                border: "none",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                textDecoration: "underline",
+                textDecorationColor: "transparent",
+                textUnderlineOffset: 4,
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle
+                  cx="8"
+                  cy="8"
+                  r="6.5"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                />
+                <path d="M6.5 5.5 11 8l-4.5 2.5V5.5Z" fill="currentColor" />
+              </svg>
+              Xem demo 2 phút
+            </button>
+          </div>
+
+          {/* Social proof avatars */}
+          <div
+            style={{
+              marginTop: 44,
+              display: "flex",
+              alignItems: "center",
+              gap: 12,
+            }}
+          >
+            <div style={{ display: "flex" }}>
+              {["#0891b2", "#2563eb", "#7c3aed", "#db2777", "#d97706"].map(
+                (c, i) => (
+                  <div
+                    key={i}
+                    style={{
+                      width: 30,
+                      height: 30,
+                      borderRadius: "50%",
+                      background: `linear-gradient(135deg, ${c}, ${c}88)`,
+                      border: "2px solid #f5f0e8",
+                      marginLeft: i === 0 ? 0 : -9,
+                      display: "grid",
+                      placeItems: "center",
+                      fontSize: 11,
+                      color: "white",
+                      fontWeight: 700,
+                      animation: `avatarFloat 3s ${i * 0.3}s ease-in-out infinite`,
+                    }}
+                  >
+                    {["V", "T", "L", "M", "N"][i]}
                   </div>
-                ))}
-              </div>
-              <span style={{ color: 'rgba(240,246,255,0.45)', fontSize: 14 }}>
-                <strong style={{ color: 'rgba(240,246,255,0.8)', fontWeight: 700 }}>2,500+</strong> chủ trọ đang sử dụng
-              </span>
-              <div>{[1, 2, 3, 4, 5].map(s => <span key={s} style={{ color: '#f59e0b', fontSize: 13 }}>★</span>)}</div>
+                ),
+              )}
             </div>
+            <span style={{ fontSize: 14, color: "#6b7570" }}>
+              <strong style={{ color: "#0b0f0e" }}>2.500+</strong> chủ trọ đang
+              dùng
+            </span>
+            <span style={{ color: "#d97706", fontSize: 13 }}>★★★★★</span>
           </div>
-        </section>
+        </div>
 
-        {/* ── STATS — counter animation ── */}
-        <section className="stats-section" style={{ padding: '20px 5% 80px' }}>
-          <div className="reveal reveal-scale" style={{ maxWidth: 960, margin: '0 auto', background: 'rgba(7,15,28,0.65)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 20, padding: '44px 0', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', backdropFilter: 'blur(20px)' }}>
-            {[
-              { count: '2500', suffix: '+', label: 'Chủ trọ tin dùng' },
-              { count: '98', suffix: '%', label: 'Thu tiền đúng hạn' },
-              { count: '40', suffix: 'h', label: 'Tiết kiệm / tháng' },
-              { count: '0', suffix: 'đ', prefix: '', label: 'Chi phí bắt đầu' },
-            ].map((s, i) => (
-              <div key={i} className="stat-item">
-                <div className="stat-value">
-                  <span data-count={s.count} data-suffix={s.suffix} data-prefix={s.prefix || ''}>
-                    {s.prefix || ''}{s.count}{s.suffix}
+        {/* Right — Dashboard card */}
+        <div style={{ position: "relative" }}>
+          <div
+            className="float-card"
+            style={{
+              background: "white",
+              border: "1px solid #e2dace",
+              borderRadius: 24,
+              padding: 28,
+              boxShadow: "0 20px 60px rgba(11,15,14,0.08)",
+              position: "relative",
+              zIndex: 2,
+            }}
+          >
+            {/* Card header */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 22,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div
+                  style={{
+                    width: 40,
+                    height: 40,
+                    background: "#ccfbf1",
+                    borderRadius: 12,
+                    display: "grid",
+                    placeItems: "center",
+                    fontSize: 18,
+                  }}
+                >
+                  🏢
+                </div>
+                <div>
+                  <div style={{ fontWeight: 600, fontSize: 15 }}>
+                    Bảng điều khiển
+                  </div>
+                  <div style={{ fontSize: 13, color: "#6b7570" }}>
+                    Tháng 4, 2026
+                  </div>
+                </div>
+              </div>
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 600,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  color: "#0d9488",
+                  background: "#ccfbf1",
+                  padding: "4px 10px",
+                  borderRadius: 100,
+                }}
+              >
+                ● Trực tiếp
+              </span>
+            </div>
+
+            {/* Metrics */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr 1fr",
+                gap: 14,
+                marginBottom: 22,
+              }}
+            >
+              {[
+                { label: "Doanh thu", val: "48", unit: "tr" },
+                { label: "Phòng trống", val: "3", unit: "" },
+                { label: "Thu hôm nay", val: "6", unit: "tr" },
+              ].map((m) => (
+                <div
+                  key={m.label}
+                  style={{
+                    background: "#f5f0e8",
+                    borderRadius: 14,
+                    padding: "14px 16px",
+                  }}
+                >
+                  <div
+                    style={{
+                      fontSize: 11,
+                      color: "#6b7570",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.08em",
+                      marginBottom: 6,
+                    }}
+                  >
+                    {m.label}
+                  </div>
+                  <div
+                    style={{
+                      fontFamily: "var(--serif)",
+                      fontSize: 28,
+                      lineHeight: 1,
+                    }}
+                  >
+                    {m.val}
+                    <span style={{ fontSize: 14, fontFamily: "var(--sans)" }}>
+                      {m.unit}
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Bar chart */}
+            <div
+              ref={barsRef}
+              style={{ display: "flex", flexDirection: "column", gap: 10 }}
+            >
+              {[
+                { label: "Phòng A", w: "92", pct: "92%" },
+                { label: "Phòng B", w: "78", pct: "78%" },
+                { label: "Phòng C", w: "100", pct: "100%" },
+              ].map((b) => (
+                <div
+                  key={b.label}
+                  style={{ display: "flex", alignItems: "center", gap: 12 }}
+                >
+                  <span
+                    style={{
+                      fontSize: 13,
+                      color: "#6b7570",
+                      width: 60,
+                      flexShrink: 0,
+                    }}
+                  >
+                    {b.label}
+                  </span>
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 6,
+                      background: "#e2dace",
+                      borderRadius: 3,
+                      overflow: "hidden",
+                    }}
+                  >
+                    <div className="bar-fill" data-w={b.w} />
+                  </div>
+                  <span
+                    style={{
+                      fontSize: 12,
+                      fontWeight: 500,
+                      width: 36,
+                      textAlign: "right",
+                    }}
+                  >
+                    {b.pct}
                   </span>
                 </div>
-                <div style={{ color: 'rgba(240,246,255,0.38)', fontSize: 13, marginTop: 7 }}>{s.label}</div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </section>
 
-        <div className="divider" style={{ margin: '0 5%' }} />
+          {/* Floating pills */}
+          <div
+            className="pill-p1"
+            style={{
+              position: "absolute",
+              bottom: -20,
+              left: -30,
+              background: "white",
+              border: "1px solid #e2dace",
+              borderRadius: 100,
+              padding: "10px 18px",
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
+              fontSize: 13,
+              fontWeight: 500,
+              boxShadow: "0 8px 24px rgba(11,15,14,0.1)",
+              whiteSpace: "nowrap",
+              zIndex: 3,
+            }}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "#0d9488",
+                animation: "pulseDot 2s infinite",
+                flexShrink: 0,
+              }}
+            />
+            ✓ Thu tiền tự động
+          </div>
+          <div
+            className="pill-p2"
+            style={{
+              position: "absolute",
+              top: 20,
+              right: -24,
+              background: "white",
+              border: "1px solid #e2dace",
+              borderRadius: 100,
+              padding: "10px 18px",
+              display: "flex",
+              alignItems: "center",
+              gap: 9,
+              fontSize: 13,
+              fontWeight: 500,
+              boxShadow: "0 8px 24px rgba(11,15,14,0.1)",
+              whiteSpace: "nowrap",
+              zIndex: 3,
+            }}
+          >
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: "#d97706",
+                flexShrink: 0,
+              }}
+            />
+            AI đang nhắc 3 phòng
+          </div>
+        </div>
+      </section>
 
-        {/* ── FEATURES — scroll reveal + enhanced hover ── */}
-        <section style={{ padding: '90px 5%' }}>
-          <div style={{ maxWidth: 1080, margin: '0 auto' }}>
-            <div style={{ textAlign: 'center', marginBottom: 64 }}>
-              <div className="badge reveal" data-delay="0" style={{ marginBottom: 18 }}>Tính năng nổi bật</div>
-              <h2 className="reveal" data-delay="100" style={{ fontSize: 'clamp(30px, 4vw, 48px)', fontWeight: 800, letterSpacing: '-1px', lineHeight: 1.15, marginBottom: 14 }}>
-                Mọi thứ bạn cần để <span className="gradient-text">làm chủ nhà trọ</span>
-              </h2>
-              <p className="reveal" data-delay="180" style={{ color: 'rgba(240,246,255,0.4)', fontSize: 15, maxWidth: 460, margin: '0 auto', lineHeight: 1.7 }}>
-                Được thiết kế riêng cho thị trường Việt Nam — đơn giản, nhanh và tự động hóa tối đa.
+      {/* ── TRUST BAR ── */}
+      <div
+        ref={trustRef}
+        style={{
+          background: "#0b0f0e",
+          padding: "18px 5%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 16,
+        }}
+      >
+        <span
+          style={{
+            fontSize: 12,
+            color: "rgba(245,240,232,0.4)",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+          }}
+        >
+          Đang được tin dùng bởi
+        </span>
+        <div style={{ display: "flex", gap: 48 }}>
+          {[
+            { count: "2500", suffix: "+", label: "Chủ trọ" },
+            { count: "98", suffix: "%", label: "Thu đúng hạn" },
+            { count: "40", suffix: "h", label: "Tiết kiệm/tháng" },
+          ].map((s) => (
+            <div key={s.label} style={{ textAlign: "center" }}>
+              <div
+                style={{
+                  fontFamily: "var(--serif)",
+                  fontSize: 30,
+                  color: "#f5f0e8",
+                }}
+              >
+                <span data-count={s.count} data-suffix={s.suffix}>
+                  {s.count}
+                  {s.suffix}
+                </span>
+              </div>
+              <div
+                style={{
+                  fontSize: 12,
+                  color: "rgba(245,240,232,0.4)",
+                  marginTop: 2,
+                }}
+              >
+                {s.label}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ color: "#d97706", fontSize: 16 }}>★★★★★</span>
+          <span style={{ color: "rgba(245,240,232,0.4)", fontSize: 13 }}>
+            4.9 / 5 sao
+          </span>
+        </div>
+      </div>
+
+      {/* ── MARQUEE ── */}
+      <div
+        style={{
+          padding: "28px 0",
+          overflow: "hidden",
+          borderTop: "1px solid #e2dace",
+          borderBottom: "1px solid #e2dace",
+          background: "#ede7d8",
+        }}
+      >
+        <div
+          className="marquee-track"
+          style={{ display: "flex", gap: 60, width: "max-content" }}
+        >
+          {[...MARQUEE_ITEMS, ...MARQUEE_ITEMS].map((item, i) => (
+            <span
+              key={i}
+              style={{
+                fontFamily: "var(--serif)",
+                fontSize: 22,
+                color: "#6b7570",
+                whiteSpace: "nowrap",
+                fontStyle: "italic",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 24,
+              }}
+            >
+              {item}
+              <span style={{ color: "#0d9488" }}>·</span>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {/* ── FEATURES ── */}
+      <section
+        id="features"
+        className="features-grid-wrap"
+        style={{
+          padding: "120px 5%",
+          display: "grid",
+          gridTemplateColumns: "380px 1fr",
+          gap: 80,
+          alignItems: "start",
+        }}
+      >
+        <div
+          className="features-sticky"
+          style={{ position: "sticky", top: 120 }}
+        >
+          <div
+            className="reveal"
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: "#0d9488",
+              marginBottom: 18,
+              display: "flex",
+              alignItems: "center",
+              gap: 10,
+            }}
+          >
+            Tính năng
+            <span
+              style={{
+                flex: 1,
+                height: 1,
+                background: "#e2dace",
+                maxWidth: 60,
+              }}
+            />
+          </div>
+          <h2
+            className="reveal"
+            style={{
+              fontFamily: "var(--serif)",
+              fontSize: "clamp(36px, 3.5vw, 52px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.5px",
+              marginBottom: 20,
+              transitionDelay: "0.1s",
+            }}
+          >
+            Mọi thứ để
+            <br />
+            <em style={{ fontStyle: "italic", color: "#6b7570" }}>làm chủ</em>
+            <br />
+            nhà trọ của bạn
+          </h2>
+          <p
+            className="reveal"
+            style={{
+              fontSize: 15,
+              color: "#6b7570",
+              lineHeight: 1.75,
+              fontWeight: 300,
+              transitionDelay: "0.2s",
+            }}
+          >
+            Được thiết kế riêng cho thị trường Việt Nam — đơn giản, nhanh, và tự
+            động hóa tối đa để bạn giải phóng hoàn toàn khỏi công việc lặp lại.
+          </p>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+          {FEATURES.map((f, i) => (
+            <div
+              key={f.num}
+              className={`feat-item reveal`}
+              style={{
+                borderRadius: 18,
+                padding: "28px 32px",
+                border: "1px solid transparent",
+                transitionDelay: `${i * 0.07}s`,
+              }}
+            >
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 16,
+                  marginBottom: 14,
+                }}
+              >
+                <div
+                  className="feat-icon-wrap"
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 12,
+                    background: f.bg,
+                    display: "grid",
+                    placeItems: "center",
+                    fontSize: 20,
+                    flexShrink: 0,
+                  }}
+                >
+                  {f.icon}
+                </div>
+                <span
+                  style={{
+                    fontFamily: "var(--serif)",
+                    fontSize: 13,
+                    color: "#6b7570",
+                    fontStyle: "italic",
+                  }}
+                >
+                  {f.num}
+                </span>
+              </div>
+              <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 9 }}>
+                {f.title}
+              </div>
+              <p
+                style={{
+                  fontSize: 14,
+                  color: "#6b7570",
+                  lineHeight: 1.7,
+                  fontWeight: 300,
+                }}
+              >
+                {f.desc}
               </p>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 18 }}>
-              {features.map((feat, idx) => (
-                <div key={idx} className="feature-card reveal" data-delay={`${idx * 100}`}>
-                  <div className="card-glow" style={{ background: `radial-gradient(ellipse at 50% 0%, ${feat.accent}22 0%, transparent 65%)` }} />
-                  <div className="card-icon-wrap" style={{ width: 52, height: 52, borderRadius: 13, background: `${feat.accent}18`, border: `1px solid ${feat.accent}35`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 24, marginBottom: 22 }}>
-                    {feat.icon}
-                  </div>
-                  <h3 style={{ fontSize: 18, fontWeight: 700, letterSpacing: '-0.3px', marginBottom: 10 }}>{feat.title}</h3>
-                  <p style={{ color: 'rgba(240,246,255,0.42)', fontSize: 14.5, lineHeight: 1.7 }}>{feat.desc}</p>
-                  <div className="learn-more" style={{ marginTop: 24, color: feat.accent, opacity: 0.7 }}>
-                    Tìm hiểu thêm <span>→</span>
-                  </div>
-                </div>
-              ))}
-            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── WORKFLOW ── */}
+      <section id="workflow" style={{ padding: "120px 5%" }}>
+        <div style={{ textAlign: "center", marginBottom: 80 }}>
+          <div
+            className="reveal"
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: "#0d9488",
+              marginBottom: 18,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+            }}
+          >
+            Cách dùng
           </div>
-        </section>
+          <h2
+            className="reveal"
+            style={{
+              fontFamily: "var(--serif)",
+              fontSize: "clamp(38px, 4vw, 56px)",
+              lineHeight: 1.1,
+              letterSpacing: "-0.5px",
+              marginBottom: 18,
+              transitionDelay: "0.1s",
+            }}
+          >
+            Bắt đầu trong 5 phút
+          </h2>
+          <p
+            className="reveal"
+            style={{
+              fontSize: 16,
+              color: "#6b7570",
+              fontWeight: 300,
+              maxWidth: 460,
+              margin: "0 auto",
+              lineHeight: 1.7,
+              transitionDelay: "0.2s",
+            }}
+          >
+            Không cần cài đặt phức tạp. Không cần thẻ tín dụng. Ba bước đơn
+            giản.
+          </p>
+        </div>
 
-        <div className="divider" style={{ margin: '0 5%' }} />
+        <div
+          className="steps-grid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 2,
+            maxWidth: 960,
+            margin: "0 auto",
+            position: "relative",
+          }}
+        >
+          <div
+            className="steps-line"
+            style={{
+              position: "absolute",
+              top: 38,
+              left: "15%",
+              right: "15%",
+              height: 1,
+              background:
+                "linear-gradient(90deg, transparent, #e2dace 20%, #e2dace 80%, transparent)",
+              pointerEvents: "none",
+            }}
+          />
+          {[
+            {
+              n: "1",
+              title: "Tạo tài khoản",
+              desc: "Đăng ký miễn phí trong 30 giây. Không cần thông tin thẻ, không cần cài đặt bất kỳ thứ gì.",
+            },
+            {
+              n: "2",
+              title: "Thêm phòng & khách",
+              desc: "Nhập thông tin phòng trọ và khách thuê. Hệ thống tự tạo hợp đồng và mã VietQR cho từng phòng.",
+            },
+            {
+              n: "3",
+              title: "Thu tiền tự động",
+              desc: "Hệ thống nhắc nợ, xác nhận thanh toán và ghi sổ tự động. Bạn chỉ cần kiểm tra báo cáo.",
+            },
+          ].map((s, i) => (
+            <div
+              key={s.n}
+              className={`step-card reveal`}
+              style={{
+                borderRadius: 20,
+                padding: "32px 28px",
+                transitionDelay: `${i * 0.1 + 0.1}s`,
+              }}
+            >
+              <div
+                className="step-num"
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: "50%",
+                  border: "1px solid #e2dace",
+                  background: "#f5f0e8",
+                  display: "grid",
+                  placeItems: "center",
+                  fontFamily: "var(--serif)",
+                  fontSize: 20,
+                  margin: "0 auto 24px",
+                  position: "relative",
+                  zIndex: 1,
+                }}
+              >
+                {s.n}
+              </div>
+              <div
+                style={{
+                  fontSize: 17,
+                  fontWeight: 600,
+                  marginBottom: 10,
+                  textAlign: "center",
+                }}
+              >
+                {s.title}
+              </div>
+              <p
+                style={{
+                  fontSize: 14,
+                  color: "#6b7570",
+                  lineHeight: 1.65,
+                  textAlign: "center",
+                  fontWeight: 300,
+                }}
+              >
+                {s.desc}
+              </p>
+            </div>
+          ))}
+        </div>
+      </section>
 
-        {/* ── CTA ── */}
-        <section style={{ padding: '100px 5%', textAlign: 'center' }}>
-          <div style={{ maxWidth: 640, margin: '0 auto' }}>
-            <div className="glow-border reveal reveal-scale">
-              <div style={{ background: 'rgba(3,8,15,0.95)', borderRadius: 23, padding: '56px 52px' }}>
-                <h2 className="reveal" data-delay="80" style={{ fontSize: 'clamp(32px, 4.5vw, 54px)', fontWeight: 900, letterSpacing: '-1.5px', lineHeight: 1.1, marginBottom: 16 }}>
-                  Bắt đầu ngay.<br /><span className="gradient-text">Miễn phí mãi mãi.</span>
-                </h2>
-                <p className="reveal" data-delay="160" style={{ color: 'rgba(240,246,255,0.42)', fontSize: 15, marginBottom: 36, lineHeight: 1.7 }}>
-                  Không cần thẻ tín dụng. Không cài đặt phức tạp.<br />Chỉ 5 phút là sẵn sàng quản lý.
-                </p>
-                <div className="reveal" data-delay="240" style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap' }}>
-                  <button className="btn-primary" onClick={() => router.push('/dashboard')} style={{ fontSize: 15, padding: '14px 36px' }}>Vào ứng dụng ngay →</button>
-                  <button className="btn-ghost" style={{ fontSize: 15, padding: '14px 36px' }}>Liên hệ tư vấn</button>
-                </div>
-                <p className="reveal" data-delay="320" style={{ color: 'rgba(240,246,255,0.22)', fontSize: 12.5, marginTop: 22 }}>
-                  ✓ Miễn phí vĩnh viễn &nbsp;·&nbsp; ✓ Hỗ trợ 24/7 &nbsp;·&nbsp; ✓ Bảo mật dữ liệu 100%
-                </p>
+      {/* ── QUOTE ── */}
+      <section
+        style={{
+          background: "#0b0f0e",
+          padding: "100px 5%",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "absolute",
+            right: "5%",
+            top: "50%",
+            transform: "translateY(-50%)",
+            fontFamily: "var(--serif)",
+            fontSize: 320,
+            color: "rgba(255,255,255,0.03)",
+            lineHeight: 1,
+            pointerEvents: "none",
+            fontStyle: "italic",
+            userSelect: "none",
+          }}
+        >
+        
+        </div>
+        <div style={{ maxWidth: 820 }}>
+          <div
+            style={{
+              fontFamily: "var(--serif)",
+              fontSize: 80,
+              color: "#0d9488",
+              lineHeight: 0.5,
+              marginBottom: 28,
+            }}
+          >
+            
+          </div>
+          <p
+            className="reveal"
+            style={{
+              fontFamily: "var(--serif)",
+              fontSize: "clamp(26px, 3vw, 38px)",
+              color: "#f5f0e8",
+              lineHeight: 1.35,
+              letterSpacing: "-0.3px",
+              marginBottom: 36,
+            }}
+          >
+            Trước kia tôi mất cả buổi sáng chủ nhật để đi thu tiền. Bây giờ{" "}
+            <em style={{ fontStyle: "italic", color: "#0d9488" }}>
+              LuanEZ làm hết
+            </em>{" "}
+            — tôi chỉ nhận thông báo khi tiền vào tài khoản.
+          </p>
+          <div
+            className="reveal"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 16,
+              transitionDelay: "0.15s",
+            }}
+          >
+            <div
+              style={{
+                width: 46,
+                height: 46,
+                borderRadius: "50%",
+                background: "linear-gradient(135deg, #0d9488, #2563eb)",
+                display: "grid",
+                placeItems: "center",
+                fontWeight: 700,
+                fontSize: 16,
+                color: "white",
+              }}
+            >
+              VT
+            </div>
+            <div>
+              <div style={{ fontSize: 15, color: "#f5f0e8", fontWeight: 500 }}>
+                Võ Thanh Tùng
+              </div>
+              <div style={{ fontSize: 13, color: "rgba(245,240,232,0.4)" }}>
+                Chủ 24 phòng trọ tại Bình Dương
               </div>
             </div>
           </div>
-        </section>
+        </div>
+      </section>
 
-        {/* ── FOOTER ── */}
-        <footer style={{ borderTop: '1px solid rgba(255,255,255,0.05)', padding: '36px 5%' }}>
-          <div style={{ maxWidth: 1080, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 26, height: 26, borderRadius: 6, background: 'linear-gradient(135deg, #06b6d4, #2563eb)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 900, fontSize: 12, color: '#fff' }}>L</div>
-              <span style={{ fontWeight: 700, fontSize: 14, color: 'rgba(240,246,255,0.6)' }}>LuanEZ</span>
-            </div>
-            <p style={{ color: 'rgba(240,246,255,0.2)', fontSize: 13 }}>© 2026 LuanEZ SaaS · Chế tác bởi Võ Thành Luân</p>
-            <div style={{ display: 'flex', gap: 20 }}>
-              {['Điều khoản', 'Bảo mật', 'Hỗ trợ'].map(l => (
-                <a key={l} href="#" className="footer-link">{l}</a>
-              ))}
-            </div>
+      {/* ── PRICING ── */}
+      <section id="pricing" style={{ padding: "120px 5%" }}>
+        <div style={{ textAlign: "center", marginBottom: 64 }}>
+          <div
+            className="reveal"
+            style={{
+              fontSize: 11,
+              fontWeight: 600,
+              letterSpacing: "0.14em",
+              textTransform: "uppercase",
+              color: "#0d9488",
+              marginBottom: 18,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 10,
+            }}
+          >
+            Giá cả
           </div>
-        </footer>
+          <h2
+            className="reveal"
+            style={{
+              fontFamily: "var(--serif)",
+              fontSize: "clamp(38px, 4vw, 54px)",
+              letterSpacing: "-0.5px",
+              marginBottom: 16,
+              transitionDelay: "0.1s",
+            }}
+          >
+            Minh bạch, không ẩn phí
+          </h2>
+          <p
+            className="reveal"
+            style={{
+              fontSize: 16,
+              color: "#6b7570",
+              fontWeight: 300,
+              transitionDelay: "0.2s",
+            }}
+          >
+            Bắt đầu miễn phí mãi mãi. Nâng cấp khi bạn cần thêm.
+          </p>
+        </div>
 
-      </div>
-    </div>
+        <div
+          className="pricing-grid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, 1fr)",
+            gap: 20,
+            maxWidth: 900,
+            margin: "0 auto",
+          }}
+        >
+          {PLANS.map((p, i) => (
+            <div
+              key={p.plan}
+              className={`price-card reveal-scale${p.featured ? " featured" : ""}`}
+              style={{
+                border: `1px solid ${p.featured ? "#0b0f0e" : "#e2dace"}`,
+                borderRadius: 24,
+                padding: "36px 32px",
+                background: p.featured ? "#0b0f0e" : "white",
+                position: "relative",
+                transitionDelay: `${i * 0.1 + 0.1}s`,
+              }}
+            >
+              {p.featured && (
+                <div
+                  style={{
+                    position: "absolute",
+                    top: -14,
+                    left: "50%",
+                    transform: "translateX(-50%)",
+                    background: "#0d9488",
+                    color: "white",
+                    fontSize: 11,
+                    fontWeight: 700,
+                    letterSpacing: "0.1em",
+                    textTransform: "uppercase",
+                    padding: "5px 16px",
+                    borderRadius: 100,
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  Phổ biến nhất
+                </div>
+              )}
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  letterSpacing: "0.12em",
+                  textTransform: "uppercase",
+                  color: p.featured ? "rgba(245,240,232,0.45)" : "#6b7570",
+                  marginBottom: 18,
+                }}
+              >
+                {p.plan}
+              </div>
+              <div
+                style={{
+                  fontFamily: "var(--serif)",
+                  fontSize: 48,
+                  letterSpacing: "-1px",
+                  color: p.featured ? "#f5f0e8" : "#0b0f0e",
+                  lineHeight: 1,
+                  marginBottom: 6,
+                }}
+              >
+                {p.amount}
+              </div>
+              <div
+                style={{
+                  fontSize: 13,
+                  color: p.featured ? "rgba(245,240,232,0.4)" : "#6b7570",
+                  marginBottom: 28,
+                }}
+              >
+                {p.period}
+              </div>
+              <ul
+                style={{
+                  listStyle: "none",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 11,
+                  marginBottom: 32,
+                }}
+              >
+                {p.features.map((f) => (
+                  <li
+                    key={f}
+                    style={{
+                      fontSize: 14,
+                      color: p.featured ? "rgba(245,240,232,0.65)" : "#6b7570",
+                      display: "flex",
+                      alignItems: "flex-start",
+                      gap: 10,
+                      fontWeight: 300,
+                    }}
+                  >
+                    <span style={{ color: "#0d9488", flexShrink: 0 }}>—</span>
+                    {f}
+                  </li>
+                ))}
+              </ul>
+              <button
+                className={p.featured ? "btn-feat" : "btn-price"}
+                onClick={() => router.push(p.featured ? "/dashboard" : "#")}
+                style={{
+                  width: "100%",
+                  fontFamily: "var(--sans)",
+                  fontSize: 14,
+                  fontWeight: 500,
+                  padding: 13,
+                  borderRadius: 12,
+                  border: p.featured ? "none" : "1px solid #e2dace",
+                  background: p.featured ? "#0d9488" : "transparent",
+                  color: p.featured ? "white" : "#0b0f0e",
+                  boxShadow: p.featured
+                    ? "0 4px 20px rgba(13,148,136,0.35)"
+                    : "none",
+                }}
+              >
+                {p.cta}
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* ── CTA ── */}
+      <section
+        style={{
+          padding: "100px 5% 120px",
+          textAlign: "center",
+          position: "relative",
+          overflow: "hidden",
+        }}
+      >
+        {[600, 400].map((size, i) => (
+          <div
+            key={size}
+            style={{
+              position: "absolute",
+              width: size,
+              height: size,
+              borderRadius: "50%",
+              border: "1px solid #e2dace",
+              top: "50%",
+              left: "50%",
+              pointerEvents: "none",
+              animation: `pulseRing 4s ${i * 0.5}s ease-in-out infinite`,
+            }}
+          />
+        ))}
+        <div
+          style={{
+            position: "relative",
+            zIndex: 2,
+            maxWidth: 640,
+            margin: "0 auto",
+          }}
+        >
+          <h2
+            className="reveal"
+            style={{
+              fontFamily: "var(--serif)",
+              fontSize: "clamp(40px, 5vw, 68px)",
+              lineHeight: 1.05,
+              letterSpacing: "-1px",
+              marginBottom: 20,
+            }}
+          >
+            Bắt đầu
+            <br />
+            <em style={{ fontStyle: "italic", color: "#0d9488" }}>
+              ngay hôm nay
+            </em>
+          </h2>
+          <p
+            className="reveal"
+            style={{
+              fontSize: 17,
+              color: "#6b7570",
+              fontWeight: 300,
+              lineHeight: 1.7,
+              marginBottom: 44,
+              transitionDelay: "0.1s",
+            }}
+          >
+            Không cần thẻ tín dụng. Không cài đặt phức tạp.
+            <br />
+            Chỉ 5 phút là sẵn sàng quản lý phòng trọ chuyên nghiệp.
+          </p>
+          <div
+            className="reveal"
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 20,
+              flexWrap: "wrap",
+              transitionDelay: "0.2s",
+            }}
+          >
+            <button
+              className="btn-primary"
+              onClick={() => router.push("/dashboard")}
+              style={{
+                fontFamily: "var(--sans)",
+                fontSize: 16,
+                fontWeight: 500,
+                color: "#f5f0e8",
+                background: "#0b0f0e",
+                border: "none",
+                borderRadius: 14,
+                padding: "16px 36px",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                boxShadow: "0 4px 24px rgba(11,15,14,0.18)",
+              }}
+            >
+              Vào ứng dụng ngay
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path
+                  d="M3 8h10m-4-4 4 4-4 4"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              </svg>
+            </button>
+            <button
+              className="btn-outline"
+              style={{
+                fontFamily: "var(--sans)",
+                fontSize: 15,
+                fontWeight: 500,
+                color: "#0b0f0e",
+                background: "transparent",
+                border: "1px solid #6b7570",
+                borderRadius: 14,
+                padding: "16px 36px",
+              }}
+            >
+              Liên hệ tư vấn
+            </button>
+          </div>
+          <p
+            className="reveal"
+            style={{
+              color: "#6b7570",
+              fontSize: 13,
+              marginTop: 28,
+              fontStyle: "italic",
+              transitionDelay: "0.3s",
+            }}
+          >
+            ✓ Miễn phí vĩnh viễn &nbsp;·&nbsp; ✓ Bảo mật tuyệt đối &nbsp;·&nbsp;
+            ✓ Hỗ trợ tiếng Việt 24/7
+          </p>
+        </div>
+      </section>
+
+      {/* ── FOOTER ── */}
+      <footer style={{ background: "#0b0f0e", padding: "60px 5% 36px" }}>
+        <div
+          className="footer-grid"
+          style={{
+            display: "grid",
+            gridTemplateColumns: "2fr 1fr 1fr 1fr",
+            gap: 60,
+            marginBottom: 56,
+          }}
+        >
+          <div>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 10,
+                marginBottom: 14,
+              }}
+            >
+              <div
+                style={{
+                  width: 32,
+                  height: 32,
+                  background: "rgba(245,240,232,0.08)",
+                  borderRadius: 8,
+                  display: "grid",
+                  placeItems: "center",
+                  fontFamily: "var(--serif)",
+                  fontSize: 18,
+                  color: "#f5f0e8",
+                  fontStyle: "italic",
+                }}
+              >
+                L
+              </div>
+              <span
+                style={{
+                  fontFamily: "var(--serif)",
+                  fontSize: 20,
+                  color: "#f5f0e8",
+                }}
+              >
+                LuanEZ
+              </span>
+            </div>
+            <p
+              style={{
+                fontSize: 14,
+                color: "rgba(245,240,232,0.4)",
+                lineHeight: 1.7,
+                maxWidth: 300,
+                fontWeight: 300,
+              }}
+            >
+              Giải pháp quản lý nhà trọ thông minh dành riêng cho thị trường
+              Việt Nam.
+            </p>
+          </div>
+          {[
+            {
+              title: "Sản phẩm",
+              links: ["Tính năng", "Giá cả", "Tích hợp", "Changelog"],
+            },
+            {
+              title: "Công ty",
+              links: ["Về chúng tôi", "Blog", "Tuyển dụng", "Liên hệ"],
+            },
+            {
+              title: "Hỗ trợ",
+              links: ["Tài liệu", "Hướng dẫn", "Điều khoản", "Bảo mật"],
+            },
+          ].map((col) => (
+            <div key={col.title}>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  letterSpacing: "0.1em",
+                  textTransform: "uppercase",
+                  color: "rgba(245,240,232,0.35)",
+                  marginBottom: 18,
+                }}
+              >
+                {col.title}
+              </div>
+              <ul
+                style={{
+                  listStyle: "none",
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 10,
+                }}
+              >
+                {col.links.map((l) => (
+                  <li key={l}>
+                    <a
+                      href="#"
+                      className="footer-link"
+                      style={{
+                        fontSize: 14,
+                        color: "rgba(245,240,232,0.55)",
+                        textDecoration: "none",
+                        fontWeight: 300,
+                      }}
+                    >
+                      {l}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+        <div
+          style={{
+            borderTop: "1px solid rgba(245,240,232,0.07)",
+            paddingTop: 28,
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12,
+          }}
+        >
+          <span
+            style={{
+              fontSize: 13,
+              color: "rgba(245,240,232,0.25)",
+              fontWeight: 300,
+            }}
+          >
+            © 2026 LuanEZ SaaS · Chế tác bởi Võ Thành Luân
+          </span>
+          <span
+            style={{
+              fontSize: 13,
+              color: "rgba(245,240,232,0.25)",
+              fontWeight: 300,
+            }}
+          >
+            Made with ☕ in Việt Nam
+          </span>
+        </div>
+      </footer>
+    </>
   );
 }

@@ -7,7 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-
 enum PlanType {
   FREE      // Gói Mầm non (Tối đa 10 phòng)
   PRO       // Gói Tiêu chuẩn 299k
@@ -18,92 +17,84 @@ enum PlanType {
 model User {
   id                 String     @id @default(auto()) @map("_id") @db.ObjectId
   email              String     @unique
-  password           String?    // Thêm password để làm tính năng Đăng nhập sau này
+  password           String?    
   name               String?
   phone              String?  
+  avatar             String?
   address            String?
   role               String     @default("TENANT") // OWNER hoặc TENANT
   createdAt          DateTime   @default(now())
-  twoFactorSecret    String?    // Lưu mã bí mật của Google Auth
+  twoFactorSecret    String?    
   isTwoFactorEnabled Boolean    @default(false)
   upgradeOrderCode   Int?       
   pendingPlan        String?
-  resetToken        String?   // Chứa mã token ngẫu nhiên
-  resetTokenExpires DateTime?
+  resetToken         String?    
+  resetTokenExpires  DateTime?
 
-  // THÊM 3 CỘT NÀY ĐỂ LƯU THÔNG TIN NHẬN TIỀN VIETQR
   bankId             String?    @default("TCB")
   bankAccount        String?
   bankAccountName    String?
   
-  // 🔥 THÊM 2 CỘT NÀY ĐỂ QUẢN LÝ GÓI CỦA CHỦ TRỌ
   plan               PlanType   @default(FREE)
-  planExpiryDate     DateTime?  // Hạn sử dụng gói (Nếu nâng cấp thì cộng thêm 30 ngày)
+  planExpiryDate     DateTime?  
   
-
-  // Quan hệ: 1 Chủ trọ quản lý nhiều Khu trọ
   properties Property[] 
-
-  // Quan hệ: 1 Tài khoản Khách thuê có thể có nhiều hợp đồng (lịch sử thuê phòng)
   tenantProfiles Tenant[]
 }
 
 // 2. BẢNG KHU TRỌ / TÒA NHÀ
 model Property {
-  id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  name       String   // VD: Trọ cao cấp Khu E, Trọ sinh viên Điện Biên Phủ...
-  address    String   // Địa chỉ khu trọ
-  createdAt  DateTime @default(now())
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   
+  address   String   
+  createdAt DateTime @default(now())
 
-  // Khóa ngoại nối về bảng User (Định danh chủ sở hữu)
-  ownerId    String   @db.ObjectId
-  owner      User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  
+  baseElectricityPrice Float @default(3500)
+  baseWaterPrice       Float @default(15000)
+  defaultRoomPrice     Float @default(0)
 
-  // Quan hệ: 1 Khu trọ có nhiều Phòng
+  ownerId   String   @db.ObjectId
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
   rooms      Room[]   
 }
 
 // 3. BẢNG PHÒNG TRỌ
 model Room {
   id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  roomNumber String   // VD: Phòng 101, Phòng 102
-  price      Float    // Giá thuê hàng tháng
-  area       Float?   // Diện tích phòng (m2)
-  deposit     Float?  //Tiền cọc
-  status     String   @default("AVAILABLE") // Trạng thái: AVAILABLE (trống), RENTED (đã thuê), MAINTENANCE (bảo trì)
+  roomNumber String   
+  price      Float    
+  area       Float?   
+  deposit    Float?   
+  status     String   @default("AVAILABLE") 
   createdAt  DateTime @default(now())
   
-  // Quan hệ: 1 Phòng có nhiều Khách (Khách ở ghép hoặc lịch sử khách cũ)
   tenants    Tenant[]
-  // Quan hệ: 1 Phòng có nhiều Hóa đơn
   invoices   Invoice[]
-  issues      Issue[]
+  issues     Issue[]
 
-  // Khóa ngoại nối về bảng Property (Khu trọ)
   propertyId String   @db.ObjectId
   property   Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
 }
 
-// 4. BẢNG KHÁCH THUÊ (Hồ sơ thuê phòng)
+// 4. BẢNG KHÁCH THUÊ
 model Tenant {
   id         String    @id @default(auto()) @map("_id") @db.ObjectId
   name       String
   phone      String
   email      String?
-  idCard     String?   // Số CCCD
-  deposit    Float     @default(0) // Tiền cọc khách đã đóng
-  issues      Issue[]
+  idCard     String?   
+  deposit    Float     @default(0) 
+  issues     Issue[]
   
-  startDate  DateTime  @default(now()) // Ngày bắt đầu thuê
-  endDate    DateTime? // Ngày kết thúc hợp đồng / Ngày trả phòng
-  status     String    @default("ACTIVE") // Trạng thái: ACTIVE (Đang ở), INACTIVE (Đã chuyển đi)
+  startDate  DateTime  @default(now()) 
+  endDate    DateTime? 
+  status     String    @default("ACTIVE") 
   
-  // Khóa ngoại nối về bảng Room (Phòng)
   roomId     String    @db.ObjectId
   room       Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
-  // --- PHẦN THÊM MỚI ---
-  // Móc nối hồ sơ thuê này với Tài khoản đăng nhập của khách
   userAccountId String? @db.ObjectId
   userAccount   User?   @relation(fields: [userAccountId], references: [id])
 
@@ -114,33 +105,31 @@ model Tenant {
 // 5. BẢNG HÓA ĐƠN
 model Invoice {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  amount      Float    // Tổng tiền
-  electricity Float    // Tiền điện
-  water       Float    // Tiền nước
-  status      String   @default("PENDING") // PENDING hoặc PAID
-  month       Int      // Tháng xuất hóa đơn
-  year        Int      // Năm xuất hóa đơn
+  amount      Float    
+  electricity Float    
+  water       Float    
+  status      String   @default("PENDING") 
+  month       Int      
+  year        Int      
   createdAt   DateTime @default(now())
-  orderCode Int? @unique
+  orderCode   Int?     @unique
 
-  // Khóa ngoại nối về bảng Room
   roomId      String   @db.ObjectId
   room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
 }
 
+// 6. BẢNG SỰ CỐ
 model Issue {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  title       String   // Tiêu đề ngắn gọn (VD: Hỏng bóng đèn)
-  description String?  // Chi tiết sự cố
-  status      String   @default("PENDING") // PENDING (Chờ xử lý), IN_PROGRESS (Đang sửa), RESOLVED (Đã xong)
+  title       String   
+  description String?  
+  status      String   @default("PENDING") 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  // Liên kết với phòng bị sự cố
   roomId      String   @db.ObjectId
   room        Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
-  // Liên kết với khách thuê báo cáo (để biết ai báo)
   tenantId    String   @db.ObjectId
   tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
@@ -149,8 +138,8 @@ model Issue {
 
 model IssueComment {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  content   String   // Nội dung tin nhắn
-  sender    String   // Ai gửi? ("ADMIN" hoặc "TENANT")
+  content   String   
+  sender    String   
   createdAt DateTime @default(now())
   
   issueId   String   @db.ObjectId

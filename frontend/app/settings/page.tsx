@@ -1,12 +1,23 @@
 'use client';
-import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useState, useRef } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import axios from 'axios';
 import Sidebar from '@/components/Sidebar';
 import TwoFactorModal from './components/TwoFactorModal'; 
 
-// 🔥 Thêm thuộc tính priceValue để tạo mã VietQR
-const SUBSCRIPTION_PLANS = [
+interface SubscriptionPlan {
+  id: string;
+  name: string;
+  price: string;
+  priceValue: number;
+  period: string;
+  desc: string;
+  isPopular?: boolean;
+  features: string[];
+  missing: string[];
+}
+
+const SUBSCRIPTION_PLANS: SubscriptionPlan[] = [
   {
     id: 'FREE',
     name: 'LuanEZ Starter',
@@ -15,22 +26,18 @@ const SUBSCRIPTION_PLANS = [
     period: '/mãi mãi',
     desc: 'Trải nghiệm quản lý cơ bản',
     features: ['Tối đa 10 phòng trọ', 'Quản lý khách thuê cơ bản', 'Ghi điện nước thủ công'],
-    missing: ['Thanh toán tự động PayOS', 'Tự động soạn Hợp đồng PDF', 'Trợ lý AI Copilot'],
-    buttonText: 'Đang sử dụng',
-    btnStyle: { background: '#252d3d', color: '#8896a8', cursor: 'not-allowed' }
+    missing: ['Thanh toán tự động PayOS', 'Tự động soạn Hợp đồng PDF', 'Trợ lý AI Copilot']
   },
   {
     id: 'PRO',
     name: 'LuanEZ Pro',
-    price: '299.000₫',
-    priceValue: 299000,
+    price: '2.000₫',
+    priceValue: 2000,
     period: '/tháng',
     desc: 'Dành cho chủ trọ chuyên nghiệp',
     isPopular: true,
     features: ['Tối đa 50 phòng trọ', 'Thanh toán tự động PayOS', 'Tự động soạn Hợp đồng PDF', 'Trợ lý AI Copilot (Tiêu chuẩn)'],
-    missing: ['Phân quyền nhiều User (Quản lý)', 'Tùy chỉnh thương hiệu riêng'],
-    buttonText: 'Nâng cấp Pro',
-    btnStyle: { background: '#3b82f6', color: '#fff', cursor: 'pointer', boxShadow: '0 4px 14px rgba(59,130,246,0.3)' }
+    missing: ['Phân quyền nhiều User (Quản lý)', 'Tùy chỉnh thương hiệu riêng']
   },
   {
     id: 'ENTERPRISE',
@@ -40,17 +47,14 @@ const SUBSCRIPTION_PLANS = [
     period: '/tháng',
     desc: 'Mô hình chuỗi CHDV cao cấp',
     features: ['Không giới hạn số phòng', 'Trợ lý AI Copilot (Nâng cao)', 'Phân quyền nhiều User', 'Tùy chỉnh Logo & Thương hiệu', 'Hỗ trợ kỹ thuật ưu tiên 24/7'],
-    missing: [],
-    buttonText: 'Liên hệ Sales',
-    btnStyle: { background: '#e8e8e8', color: '#000', cursor: 'pointer' }
+    missing: []
   }
 ];
 
-// Thông tin tài khoản của HỆ THỐNG LuanEZ (Để thu tiền gói)
 const SYSTEM_BANK = {
   bankId: 'TCB',
   bankAccount: '19038975516014',
-  bankAccountName: 'VO THANH LUAN' // Tài khoản của sếp
+  bankAccountName: 'VO THANH LUAN'
 };
 
 export default function SettingsPage() {
@@ -58,41 +62,51 @@ export default function SettingsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('profile');
   const router = useRouter();
+  const searchParams = useSearchParams(); 
   
-  const currentPlan = 'FREE'; 
+  const [currentPlan, setCurrentPlan] = useState('FREE'); 
+  const [planExpiry, setPlanExpiry] = useState<string | null>(null);
   
-  // State Profile
   const [userInfo, setUserInfo] = useState({ name: 'Admin', email: '', initial: 'A' });
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('0901234567');
   const [editAddress, setEditAddress] = useState('Hồ Chí Minh, Việt Nam');
   
-  // State Thanh toán VietQR (Của chủ trọ)
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [bankId, setBankId] = useState('TCB');
   const [bankAccount, setBankAccount] = useState('');
   const [bankAccountName, setBankAccountName] = useState('');
 
-  // State Thông báo & Bảo mật
   const [notifyInvoice, setNotifyInvoice] = useState(true);
   const [notifyTenant, setNotifyTenant] = useState(true);
   const [notifyMarketing, setNotifyMarketing] = useState(false);
   
-  // State 2FA
   const [twoFactorAuth, setTwoFactorAuth] = useState(false);
   const [show2FaModal, setShow2FaModal] = useState(false);
 
-  // State Mật khẩu
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
 
-  // 🔥 STATE CHO UPGRADE MODAL (THANH TOÁN GÓI)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [selectedPlan, setSelectedPlan] = useState<any>(null);
+  const [selectedPlan, setSelectedPlan] = useState<SubscriptionPlan | null>(null);
   const [payMethod, setPayMethod] = useState<'AUTO' | 'MANUAL'>('AUTO');
   const [isProcessingPay, setIsProcessingPay] = useState(false);
   const [upgradeSuccess, setUpgradeSuccess] = useState(false);
   const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
+  const getButtonConfig = (planId: string, planPrice: number, planName: string) => {
+    if (planId === currentPlan) return { text: 'Đang sử dụng', bg: '#252d3d', color: '#8896a8', cursor: 'not-allowed', border: 'none', shadow: 'none', disabled: true };
+    const currentPrice = SUBSCRIPTION_PLANS.find(p => p.id === currentPlan)?.priceValue || 0;
+    if (planPrice > currentPrice) {
+      if (planId === 'ENTERPRISE') return { text: 'Liên hệ Sales', bg: '#e8e8e8', color: '#000', cursor: 'pointer', border: 'none', shadow: 'none', disabled: false };
+      return { text: `Nâng cấp ${planName.replace('LuanEZ ', '')}`, bg: '#3b82f6', color: '#fff', cursor: 'pointer', border: 'none', shadow: '0 4px 14px rgba(59,130,246,0.3)', disabled: false };
+    } else {
+      return { text: `Tự động về gói này khi hết hạn`, bg: 'transparent', color: '#4a5568', cursor: 'not-allowed', border: '1px dashed #252d3d', shadow: 'none', disabled: true };
+    }
+  };
 
   const BANKS = [
     { id: 'TCB', name: 'Techcombank' }, { id: 'MB', name: 'MBBank' },
@@ -101,6 +115,21 @@ export default function SettingsPage() {
     { id: 'TPB', name: 'TPBank' }, { id: 'VPB', name: 'VPBank' },
     { id: 'VIB', name: 'VIB' },
   ];
+
+  useEffect(() => {
+    const upgradeStatus = searchParams.get('upgrade');
+    if (upgradeStatus === 'success') {
+      alert('🎉 Chúc mừng! Bạn đã thanh toán thành công. Gói dịch vụ đã được cập nhật!');
+      setActiveTab('billing'); 
+      router.replace('/settings'); 
+      setTimeout(() => window.location.reload(), 500);
+    } else if (upgradeStatus === 'cancel') {
+      alert('⚠️ Bạn đã hủy thanh toán.');
+      setActiveTab('billing');
+      router.replace('/settings');
+      setTimeout(() => window.location.reload(), 500);
+    }
+  }, [searchParams, router]);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -118,13 +147,20 @@ export default function SettingsPage() {
         const res = await axios.get(`${API_URL}/user/profile`, {
           headers: { Authorization: `Bearer ${token}` }
         });
+        
         if (res.data) {
           setEditPhone(res.data.phone || '');
           setEditAddress(res.data.address || '');
+          if(res.data.avatar) setAvatarUrl(res.data.avatar);
           if(res.data.bankId) setBankId(res.data.bankId);
           if(res.data.bankAccount) setBankAccount(res.data.bankAccount);
           if(res.data.bankAccountName) setBankAccountName(res.data.bankAccountName);
-          if (res.data.isTwoFactorEnabled !== undefined) setTwoFactorAuth(res.data.isTwoFactorEnabled);
+          if(res.data.isTwoFactorEnabled !== undefined) setTwoFactorAuth(res.data.isTwoFactorEnabled);
+          
+          if (res.data.plan) setCurrentPlan(res.data.plan);
+          if (res.data.planExpiryDate) {
+            setPlanExpiry(new Date(res.data.planExpiryDate).toLocaleDateString('vi-VN'));
+          }
         }
       } catch (error) {
         console.error("Lỗi tải thông tin user:", error);
@@ -133,7 +169,7 @@ export default function SettingsPage() {
       }
     };
     fetchUserData();
-  }, [router]);
+  }, [router, API_URL]);
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -144,6 +180,69 @@ export default function SettingsPage() {
       alert('✅ Đã cập nhật hồ sơ thành công!');
       setUserInfo(prev => ({ ...prev, name: editName, initial: editName.charAt(0).toUpperCase() }));
     } catch { alert('⚠️ Không thể cập nhật hồ sơ. Vui lòng thử lại!'); } finally { setIsSaving(false); }
+  };
+
+  // ========================================================
+  // 🔥 XỬ LÝ UPLOAD AVATAR (DÙNG FETCH ĐỂ TRỊ BỆNH BOUNDARY)
+  // ========================================================
+  const handleAvatarUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('⚠️ Ảnh quá lớn. Vui lòng chọn ảnh dưới 5MB.');
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    setIsUploadingAvatar(true);
+    try {
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch(`${API_URL}/user/avatar`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          // Tuyệt đối không khai báo Content-Type ở đây
+        },
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || 'Lỗi từ máy chủ!');
+      }
+
+      setAvatarUrl(data.avatarUrl); 
+      alert('✅ Đã cập nhật ảnh đại diện thành công!');
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (error: any) {
+      console.error('Lỗi Upload:', error);
+      alert(`⚠️ Không thể tải ảnh lên: ${error.message}`);
+    } finally {
+      setIsUploadingAvatar(false);
+      if (fileInputRef.current) fileInputRef.current.value = ''; 
+    }
+  };
+
+  const handleDeleteAvatar = async () => {
+    const confirm = window.confirm('Sếp có chắc chắn muốn xóa ảnh đại diện không?');
+    if (!confirm) return;
+
+    try {
+      const token = localStorage.getItem('token');
+      await axios.delete(`${API_URL}/user/avatar`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAvatarUrl(null);
+      alert('✅ Đã xóa ảnh đại diện!');
+    } catch (error) {
+      console.error(error);
+      alert('⚠️ Lỗi khi xóa ảnh!');
+    }
   };
 
   const handleSavePayment = async (e: React.FormEvent) => {
@@ -165,8 +264,13 @@ export default function SettingsPage() {
       await axios.post(`${API_URL}/auth/change-password`, { oldPassword: currentPassword, newPassword: newPassword }, { headers: { Authorization: `Bearer ${token}` } });
       alert('🔒 Cập nhật mật khẩu thành công! Vui lòng đăng nhập lại.');
       localStorage.removeItem('token'); router.push('/login');
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (error: any) { alert(error.response?.data?.message || '⚠️ Có lỗi kết nối hệ thống!'); } finally { setIsSaving(false); }
+    } catch (error) { 
+      if (axios.isAxiosError(error)) {
+        alert(error.response?.data?.message || '⚠️ Có lỗi kết nối hệ thống!'); 
+      } else {
+        alert('⚠️ Có lỗi kết nối hệ thống!'); 
+      }
+    } finally { setIsSaving(false); }
   };
 
   const handleToggle2FA = async () => {
@@ -182,29 +286,22 @@ export default function SettingsPage() {
     } else { setShow2FaModal(true); }
   };
 
-  const handleExportData = async () => { /* Export logic... */ };
-  const handleDeleteAccount = async () => { /* Delete logic... */ };
-
-  // 🔥 HÀM GỌI API NÂNG CẤP BẰNG PAYOS
   const handlePayOSUpgrade = async () => {
+    if (selectedPlan?.id === 'FREE') return;
     setIsProcessingPay(true);
     try {
       const token = localStorage.getItem('token');
-      
-      // 👉 Sếp nhớ thêm chữ email: userInfo.email vào đây nhé!
       const res = await axios.post(`${API_URL}/payos/upgrade-plan`, 
-        { 
-          planId: selectedPlan.id, 
-          email: userInfo.email // 🔥 Dòng giải cứu thế giới đây
-        }, 
+        { planId: selectedPlan?.id, email: userInfo.email }, 
         { headers: { Authorization: `Bearer ${token}` } }
       );
-      
       if (res.data?.checkoutUrl) window.location.href = res.data.checkoutUrl;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } catch (err: any) {
-      console.error(err);
-      alert('⚠️ API nâng cấp PayOS chưa sẵn sàng (chưa code backend). Sếp test bằng tab VietQR nha!');
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        alert(`❌ Backend từ chối: ${error.response?.data?.message || 'Lỗi không xác định từ máy chủ'}`);
+      } else {
+        alert('⚠️ Không thể kết nối với PayOS. Vui lòng thử lại sau!');
+      }
     } finally {
       setIsProcessingPay(false);
     }
@@ -281,16 +378,58 @@ export default function SettingsPage() {
               {/* TAB 1: PROFILE */}
               {activeTab === 'profile' && (
                 <form className="settings-card" onSubmit={handleSaveProfile}>
-                  <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 24, color: '#f0f0f0' }}>Thông tin cơ bản</h3>
+                  <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 24, color: '#f0f0f0' }}>Thông báo & Hồ sơ</h3>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 28 }}>
-                    <div style={{ width: 80, height: 80, borderRadius: '50%', background: '#222836', border: '2px solid #252d3d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, fontWeight: 700, color: '#8896a8', flexShrink: 0 }}>{userInfo.initial}</div>
+                    
+                    {/* 🔥 Khu vực hiển thị Avatar */}
+                    <div style={{ width: 80, height: 80, borderRadius: '50%', background: '#222836', border: '2px solid #252d3d', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, fontWeight: 700, color: '#8896a8', flexShrink: 0, overflow: 'hidden' }}>
+                      {avatarUrl ? (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img 
+                          // 🔥 FIX Ở ĐÂY: Ép nó phải sang đúng cổng 3000 của Backend để lấy ảnh
+                          src={avatarUrl.startsWith('http') ? avatarUrl : `http://localhost:3000${avatarUrl}`} 
+                          alt="Avatar" 
+                          style={{ width: '100%', height: '100%', objectFit: 'cover' }} 
+                        />
+                      ) : (
+                        userInfo.initial
+                      )}
+                    </div>
+
                     <div>
                       <div style={{ display: 'flex', gap: 10, marginBottom: 8 }}>
-                        <button type="button" style={{ background: '#fff', color: '#000', border: 'none', padding: '7px 14px', borderRadius: 7, cursor: 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit' }}>Đổi Avatar</button>
-                        <button type="button" style={{ background: 'transparent', color: '#8896a8', border: '1px solid #252d3d', padding: '7px 14px', borderRadius: 7, cursor: 'pointer', fontWeight: 500, fontSize: 13, fontFamily: 'inherit' }}>Xóa ảnh</button>
+                        <input 
+                          type="file" 
+                          accept="image/png, image/jpeg, image/jpg" 
+                          ref={fileInputRef} 
+                          style={{ display: 'none' }} 
+                          onChange={handleAvatarUpload} 
+                        />
+                        <button 
+                          type="button" 
+                          disabled={isUploadingAvatar}
+                          onClick={() => fileInputRef.current?.click()} 
+                          style={{ background: '#fff', color: '#000', border: 'none', padding: '7px 14px', borderRadius: 7, cursor: isUploadingAvatar ? 'not-allowed' : 'pointer', fontWeight: 700, fontSize: 13, fontFamily: 'inherit' }}
+                        >
+                          {isUploadingAvatar ? 'Đang tải...' : 'Đổi Avatar'}
+                        </button>
+                        
+                        {avatarUrl && (
+                          <button 
+                            type="button" 
+                            onClick={handleDeleteAvatar} 
+                            style={{ background: 'transparent', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', padding: '7px 14px', borderRadius: 7, cursor: 'pointer', fontWeight: 500, fontSize: 13, fontFamily: 'inherit', transition: '0.2s' }}
+                            onMouseOver={e => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
+                            onMouseOut={e => e.currentTarget.style.background = 'transparent'}
+                          >
+                            Xóa ảnh
+                          </button>
+                        )}
                       </div>
+                      <div style={{ fontSize: 11, color: '#6b7280' }}>Định dạng: JPG, PNG. Dung lượng tối đa: 5MB.</div>
                     </div>
                   </div>
+
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 18, marginBottom: 18 }}>
                     <div><label style={labelStyle}>Tên hiển thị</label><input type="text" style={inputStyle} value={editName} onChange={e => setEditName(e.target.value)} required /></div>
                     <div><label style={labelStyle}>Số điện thoại</label><input type="text" style={inputStyle} value={editPhone} onChange={e => setEditPhone(e.target.value)} /></div>
@@ -312,7 +451,7 @@ export default function SettingsPage() {
               )}
 
               {/* TAB 1.5: PAYMENT (VIETQR) */}
-              {activeTab === 'payment' && ( /* ... Giữ nguyên như cũ ... */ 
+              {activeTab === 'payment' && (
                 <form className="settings-card" onSubmit={handleSavePayment}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
                     <h3 style={{ fontSize: 16, fontWeight: 700, color: '#f0f0f0' }}>Cấu hình Thanh toán (VietQR)</h3>
@@ -340,42 +479,35 @@ export default function SettingsPage() {
                 </form>
               )}
 
-              {/* 🔥 TAB 2: NOTIFICATIONS (THÔNG BÁO) */}
+              {/* TAB 2: NOTIFICATIONS */}
               {activeTab === 'notifications' && (
                 <div className="settings-card fade-in">
                   <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, color: '#f0f0f0' }}>Tùy chỉnh Thông báo</h3>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                    
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <div style={{ fontWeight: 600, color: '#d0d8e8', marginBottom: 4 }}>Thông báo Hóa đơn & Tài chính</div>
-                        <div style={{ fontSize: 13, color: '#6b7280' }}>Nhận email khi có hóa đơn mới hoặc khi khách thanh toán thành công qua PayOS.</div>
+                        <div style={{ fontSize: 13, color: '#6b7280' }}>Nhận email khi có hóa đơn mới hoặc thanh toán qua PayOS.</div>
                       </div>
                       <input type="checkbox" className="toggle-switch" checked={notifyInvoice} onChange={e => setNotifyInvoice(e.target.checked)} />
                     </div>
-                    
                     <div style={{ height: 1, background: '#252d3d' }} />
-                    
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <div style={{ fontWeight: 600, color: '#d0d8e8', marginBottom: 4 }}>Cập nhật Khách thuê & Sự cố</div>
-                        <div style={{ fontSize: 13, color: '#6b7280' }}>Thông báo khi có khách thuê dọn vào/ra hoặc khi có người báo cáo sự cố điện nước.</div>
+                        <div style={{ fontSize: 13, color: '#6b7280' }}>Thông báo dọn vào/ra hoặc sự cố.</div>
                       </div>
                       <input type="checkbox" className="toggle-switch" checked={notifyTenant} onChange={e => setNotifyTenant(e.target.checked)} />
                     </div>
-                    
                     <div style={{ height: 1, background: '#252d3d' }} />
-                    
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
-                        <div style={{ fontWeight: 600, color: '#d0d8e8', marginBottom: 4 }}>Tin tức & Khuyến mãi LuanEZ</div>
-                        <div style={{ fontSize: 13, color: '#6b7280' }}>Nhận thông tin cập nhật tính năng mới và các gói giảm giá (Pro/Enterprise).</div>
+                        <div style={{ fontWeight: 600, color: '#d0d8e8', marginBottom: 4 }}>Tin tức LuanEZ</div>
+                        <div style={{ fontSize: 13, color: '#6b7280' }}>Nhận tính năng mới và khuyến mãi.</div>
                       </div>
                       <input type="checkbox" className="toggle-switch" checked={notifyMarketing} onChange={e => setNotifyMarketing(e.target.checked)} />
                     </div>
-
                   </div>
-                  
                   <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 28 }}>
                     <button onClick={() => alert('✅ Đã lưu cài đặt thông báo!')} style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '11px 22px', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontSize: 14, fontFamily: 'inherit' }}>
                       Lưu tùy chọn
@@ -384,11 +516,9 @@ export default function SettingsPage() {
                 </div>
               )}
 
-              {/* 🔥 TAB 3: SECURITY (BẢO MẬT) */}
+              {/* TAB 3: SECURITY */}
               {activeTab === 'security' && (
                 <div className="fade-in" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                  
-                  {/* BLOCK 1: ĐỔI MẬT KHẨU */}
                   <form className="settings-card" onSubmit={handleChangePassword}>
                     <h3 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20, color: '#f0f0f0' }}>Đổi mật khẩu</h3>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 24 }}>
@@ -413,14 +543,12 @@ export default function SettingsPage() {
                       </button>
                     </div>
                   </form>
-
-                  {/* BLOCK 2: BẢO MẬT 2 LỚP (2FA) */}
                   <div className="settings-card">
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                       <div>
                         <h3 style={{ fontSize: 16, fontWeight: 700, color: '#f0f0f0', marginBottom: 6 }}>Bảo mật 2 lớp (2FA)</h3>
                         <p style={{ color: '#8896a8', fontSize: 13, maxWidth: 450, lineHeight: 1.5 }}>
-                          Tăng cường bảo mật tài khoản bằng cách yêu cầu mã xác thực từ ứng dụng <strong style={{color: '#d0d8e8'}}>Google Authenticator</strong> mỗi khi đăng nhập.
+                          Yêu cầu mã xác thực từ <strong style={{color: '#d0d8e8'}}>Google Authenticator</strong> mỗi khi đăng nhập.
                         </p>
                       </div>
                       <button type="button" onClick={handleToggle2FA} style={{ padding: '11px 22px', borderRadius: 8, fontWeight: 700, cursor: 'pointer', fontSize: 13, fontFamily: 'inherit', border: twoFactorAuth ? '1px solid #ef4444' : 'none', background: twoFactorAuth ? 'rgba(239, 68, 68, 0.1)' : '#10b981', color: twoFactorAuth ? '#ef4444' : '#fff', transition: '0.2s' }}>
@@ -428,58 +556,75 @@ export default function SettingsPage() {
                       </button>
                     </div>
                   </div>
-
                 </div>
               )}
 
-              {/* 🔥 TAB 4: BILLING */}
+              {/* TAB 4: BILLING */}
               {activeTab === 'billing' && (
                 <div style={{ marginBottom: 40 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 24 }}>
                     <div>
                       <h3 style={{ fontSize: 18, fontWeight: 700, color: '#f0f0f0', marginBottom: 6 }}>Nâng cấp Gói dịch vụ</h3>
                       <p style={{ color: '#8896a8', fontSize: 13.5 }}>Mở khóa các tính năng quản lý nhà trọ chuyên nghiệp, tối ưu hóa doanh thu.</p>
+                      
+                      {currentPlan !== 'FREE' && planExpiry && (
+                        <div style={{ marginTop: 12, padding: '8px 12px', background: 'rgba(59,130,246,0.1)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 8, display: 'inline-block', color: '#93c5fd', fontSize: 13, fontWeight: 600 }}>
+                          ⏳ Gói {currentPlan} của bạn có hạn đến ngày: {planExpiry}
+                        </div>
+                      )}
                     </div>
                   </div>
 
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-                    {SUBSCRIPTION_PLANS.map((plan) => (
-                      <div key={plan.id} style={{ 
-                        background: '#161a21', border: plan.isPopular ? '2px solid #3b82f6' : '1px solid #252d3d', 
-                        borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden'
-                      }}>
-                        {plan.isPopular && (<div style={{ position: 'absolute', top: 12, right: -28, background: '#3b82f6', color: '#fff', fontSize: 10, fontWeight: 700, padding: '4px 30px', transform: 'rotate(45deg)', letterSpacing: '0.5px' }}>PHỔ BIẾN</div>)}
-                        <h4 style={{ color: '#f0f0f0', fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{plan.name}</h4>
-                        <p style={{ color: '#6b7280', fontSize: 12, marginBottom: 20 }}>{plan.desc}</p>
-                        
-                        <div style={{ marginBottom: 24 }}>
-                          <span style={{ color: '#f0f0f0', fontSize: 26, fontWeight: 800 }}>{plan.price}</span>
-                          <span style={{ color: '#6b7280', fontSize: 13 }}>{plan.period}</span>
-                        </div>
-                        
-                        <button 
-                          disabled={plan.id === currentPlan}
-                          onClick={() => {
-                            if (plan.id !== 'FREE') {
-                              setSelectedPlan(plan);
-                              setUpgradeSuccess(false);
-                            }
-                          }} 
-                          style={{ ...plan.btnStyle, width: '100%', padding: 12, borderRadius: 8, fontWeight: 600, fontSize: 13, border: 'none', marginBottom: 24, transition: '0.2s' }}
-                        >
-                          {plan.id === currentPlan ? 'Đang sử dụng' : plan.buttonText}
-                        </button>
+                    {SUBSCRIPTION_PLANS.map((plan) => {
+                      const btnConfig = getButtonConfig(plan.id, plan.priceValue, plan.name);
 
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
-                          {plan.features.map((f, i) => (
-                            <div key={`y-${i}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#d0d8e8', lineHeight: 1.4 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><path d="M5 13l4 4L19 7"/></svg>{f}</div>
-                          ))}
-                          {plan.missing.map((m, i) => (
-                            <div key={`n-${i}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#4a5568', lineHeight: 1.4 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5568" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg><span style={{ textDecoration: 'line-through' }}>{m}</span></div>
-                          ))}
+                      return (
+                        <div key={plan.id} style={{ 
+                          background: '#161a21', border: plan.isPopular ? '2px solid #3b82f6' : '1px solid #252d3d', 
+                          borderRadius: 16, padding: 24, display: 'flex', flexDirection: 'column', position: 'relative', overflow: 'hidden'
+                        }}>
+                          {plan.isPopular && (<div style={{ position: 'absolute', top: 12, right: -28, background: '#3b82f6', color: '#fff', fontSize: 10, fontWeight: 700, padding: '4px 30px', transform: 'rotate(45deg)', letterSpacing: '0.5px' }}>PHỔ BIẾN</div>)}
+                          <h4 style={{ color: '#f0f0f0', fontSize: 16, fontWeight: 700, marginBottom: 4 }}>{plan.name}</h4>
+                          <p style={{ color: '#6b7280', fontSize: 12, marginBottom: 20 }}>{plan.desc}</p>
+                          
+                          <div style={{ marginBottom: 24 }}>
+                            <span style={{ color: '#f0f0f0', fontSize: 26, fontWeight: 800 }}>{plan.price}</span>
+                            <span style={{ color: '#6b7280', fontSize: 13 }}>{plan.period}</span>
+                          </div>
+                          
+                          <button 
+                            disabled={btnConfig.disabled}
+                            onClick={() => {
+                              if (!btnConfig.disabled) {
+                                setSelectedPlan(plan);
+                                setUpgradeSuccess(false);
+                              }
+                            }} 
+                            style={{ 
+                              background: btnConfig.bg,
+                              color: btnConfig.color,
+                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                              cursor: btnConfig.cursor as any,
+                              border: btnConfig.border,
+                              boxShadow: btnConfig.shadow,
+                              width: '100%', padding: 12, borderRadius: 8, fontWeight: 600, fontSize: 13, marginBottom: 24, transition: '0.2s' 
+                            }}
+                          >
+                            {btnConfig.text}
+                          </button>
+
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
+                            {plan.features.map((f, i) => (
+                              <div key={`y-${i}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#d0d8e8', lineHeight: 1.4 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><path d="M5 13l4 4L19 7"/></svg>{f}</div>
+                            ))}
+                            {plan.missing.map((m, i) => (
+                              <div key={`n-${i}`} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: '#4a5568', lineHeight: 1.4 }}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#4a5568" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: 2 }}><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg><span style={{ textDecoration: 'line-through' }}>{m}</span></div>
+                            ))}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -489,7 +634,7 @@ export default function SettingsPage() {
         </div>
       </div>
 
-      {/* 🔥 MODAL THANH TOÁN NÂNG CẤP GÓI DỊCH VỤ */}
+      {/* MODAL THANH TOÁN */}
       {selectedPlan && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.85)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
           <div className="fade-in" onClick={e => e.stopPropagation()} style={{ width: 400, background: '#1e2330', borderRadius: 24, padding: '32px', textAlign: 'center', border: '1px solid #252d3d', position: 'relative', overflow: 'hidden' }}>
@@ -535,15 +680,14 @@ export default function SettingsPage() {
             ) : (
               <div style={{ padding: '20px 0', animation: 'fadeIn 0.3s ease' }}>
                 <div style={{ color: '#10b981', fontSize: 40, marginBottom: 12 }}>✅</div>
-                <p style={{ fontWeight: 700, color: '#fff', fontSize: 16 }}>Đã gửi yêu cầu nâng cấp!</p>
-                <p style={{ color: '#8896a8', fontSize: 13, marginTop: 8 }}>Hệ thống đang xử lý giao dịch của bạn.</p>
+                <p style={{ fontWeight: 700, color: '#fff', fontSize: 16 }}>Đã gửi yêu cầu xử lý!</p>
+                <p style={{ color: '#8896a8', fontSize: 13, marginTop: 8 }}>Hệ thống đang xử lý yêu cầu của bạn.</p>
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* Gọi Modal 2FA đã import */}
       <TwoFactorModal 
         isOpen={show2FaModal} 
         onClose={() => setShow2FaModal(false)}

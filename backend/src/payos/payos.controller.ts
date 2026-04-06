@@ -25,4 +25,8 @@ export class PayosController {
     // Truyền email từ Frontend lên cho chắc ăn 100%
     return this.payosService.createUpgradeLink(body.email, body.planId);
   }
+  @Post('downgrade')
+  async downgradePlan(@Body('email') email: string) {
+    return this.payosService.downgradeToFree(email);
+  }
 }

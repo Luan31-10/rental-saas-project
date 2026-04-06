@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { ServeStaticModule } from '@nestjs/serve-static';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -14,6 +15,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { TasksService } from './tasks/tasks.service';
 import { IssueModule } from './issue/issue.module';
 import { PayosModule } from './payos/payos.module';
+import { join } from 'path';
 
 @Module({
   imports: [
@@ -29,6 +31,10 @@ import { PayosModule } from './payos/payos.module';
     ScheduleModule.forRoot(),
     IssueModule,
     PayosModule,
+    ServeStaticModule.forRoot({
+      rootPath: join(process.cwd(), 'uploads'), // Trỏ thẳng vào thư mục uploads
+      serveRoot: '/uploads',
+    }),
   ],
   controllers: [AppController],
   providers: [AppService, TasksService],

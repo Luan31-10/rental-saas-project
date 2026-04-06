@@ -6,7 +6,7 @@ import Sidebar from '@/components/Sidebar';
 
 interface Tenant { id: string; name: string; phone: string; status: string; }
 interface Room { id: string; roomNumber: string; price: number; status: string; area: number; tenants?: Tenant[]; }
-interface Property { id: string; name: string; address: string; rooms?: Room[]; }
+interface Property { id: string; name: string; address: string; defaultRoomPrice?: number; rooms?: Room[]; }
 
 export default function RoomsPage() {
   const [properties, setProperties] = useState<Property[]>([]);
@@ -25,16 +25,35 @@ export default function RoomsPage() {
     try {
       const res = await axios.get(`${API_URL}/property`, { headers: { Authorization: `Bearer ${token}` } });
       setProperties(res.data);
-      // Gán sẵn propertyId đầu tiên nếu có
-      if (res.data.length > 0) setNewRoom(prev => ({ ...prev, propertyId: res.data[0].id }));
     } catch { console.error('Lỗi lấy dữ liệu'); }
     finally { setLoading(false); }
-  }, [router]);
+  }, [router, API_URL]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Lấy giá sàn của khu trọ đang được chọn trong Form
+  const selectedProp = properties.find(p => p.id === newRoom.propertyId);
+  const floorPrice = selectedProp?.defaultRoomPrice || 0;
+
   const handleCreateRoom = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedProp) return;
+
+    // CHỐT CHẶN 1: Trùng tên phòng
+    const isDuplicate = (selectedProp.rooms || []).some(
+      r => r.roomNumber.toLowerCase().trim() === newRoom.roomNumber.toLowerCase().trim()
+    );
+    if (isDuplicate) {
+      alert('⚠️ Tên/Số phòng này đã tồn tại trong khu trọ được chọn. Vui lòng nhập tên khác!');
+      return;
+    }
+
+    // CHỐT CHẶN 2: Giá sàn
+    if (floorPrice && Number(newRoom.price) < floorPrice) {
+      alert(`⚠️ Giá thuê không được thấp hơn giá sàn của khu trọ này (${floorPrice.toLocaleString('vi-VN')} ₫)!`);
+      return;
+    }
+
     setIsSubmitting(true);
     try {
       const token = localStorage.getItem('token');
@@ -46,18 +65,15 @@ export default function RoomsPage() {
       }, { headers: { Authorization: `Bearer ${token}` } });
       
       setIsAddModalOpen(false);
-      setNewRoom(prev => ({ ...prev, roomNumber: '', price: '', area: '' }));
-      fetchData(); // Load lại data
+      setNewRoom({ propertyId: '', roomNumber: '', price: '', area: '' });
+      fetchData(); 
     } catch (err) {
-      // 🔥 Dùng isAxiosError để chứng minh giấy tờ hợp lệ với ESLint
       if (axios.isAxiosError(err)) {
         if (err.response?.data?.code === 'UPGRADE_REQUIRED') {
           const confirmUpgrade = window.confirm(
-            `🚀 Bạn đã đạt giới hạn số lượng phòng của gói dịch vụ hiện tại!\n\nBạn có muốn chuyển đến trang Cài đặt để Nâng cấp gói không?`
+            `🚀 ${err.response.data.message}\n\nBạn có muốn chuyển đến trang Cài đặt để Nâng cấp gói không?`
           );
-          if (confirmUpgrade) {
-            router.push('/settings');
-          }
+          if (confirmUpgrade) router.push('/settings');
         } else {
           alert(err.response?.data?.message || 'Có lỗi xảy ra khi tạo phòng!');
         }
@@ -66,6 +82,45 @@ export default function RoomsPage() {
       }
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleDeleteRoom = async (roomId: string, status: string) => {
+    if (status === 'OCCUPIED') {
+      alert('⚠️ Không thể xóa phòng đang có người thuê! Vui lòng làm thủ tục trả phòng trước.');
+      return;
+    }
+    if (!window.confirm('Bạn có chắc chắn muốn xóa phòng này không?')) return;
+    
+    const token = localStorage.getItem('token');
+    try {
+      await axios.delete(`${API_URL}/room/${roomId}`, { headers: { Authorization: `Bearer ${token}` } });
+      fetchData();
+    } catch { alert('Không thể xóa phòng này!'); }
+  };
+
+  // ==========================================
+  // 🔥 XỬ LÝ TRẢ PHÒNG THỦ CÔNG
+  // ==========================================
+  const handleManualCheckout = async (roomId: string, roomNumber: string) => {
+    const confirmText = window.confirm(`Sếp có chắc chắn muốn làm thủ tục trả phòng cho Phòng ${roomNumber} không? Hệ thống sẽ tự động tính tiền phòng lẻ (nếu có).`);
+    if (!confirmText) return; 
+
+    try {
+      const token = localStorage.getItem('token');
+      const res = await axios.post(`${API_URL}/room/${roomId}/checkout`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      alert(`✅ ${res.data.message}`);
+      fetchData(); // Load lại dữ liệu để phòng chuyển thành màu xanh (Trống)
+    } catch (error) {
+      console.error('Lỗi trả phòng:', error);
+      if (axios.isAxiosError(error)) {
+        alert(`⚠️ ${error.response?.data?.message || 'Có lỗi xảy ra khi trả phòng!'}`);
+      } else {
+        alert('⚠️ Lỗi hệ thống không xác định!');
+      }
     }
   };
 
@@ -96,7 +151,7 @@ export default function RoomsPage() {
         ::-webkit-scrollbar { width: 4px; }
         ::-webkit-scrollbar-track { background: transparent; }
         ::-webkit-scrollbar-thumb { background: #2a3040; border-radius: 4px; }
-        .room-card { background: #1e2330; border: 1px solid #252d3d; border-radius: 12px; padding: 18px; transition: all 0.2s; }
+        .room-card { background: #1e2330; border: 1px solid #252d3d; border-radius: 12px; padding: 18px; transition: all 0.2s; display: flex; flex-direction: column; }
         .room-card:hover { border-color: #354055; transform: translateY(-2px); box-shadow: 0 8px 24px rgba(0,0,0,0.2); }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
         .fade-in { animation: fadeIn 0.35s ease-out forwards; }
@@ -132,7 +187,18 @@ export default function RoomsPage() {
                   </button>
                 ))}
               </div>
-              <button onClick={() => setIsAddModalOpen(true)} style={{ padding: '8px 16px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <button 
+                onClick={() => {
+                  const firstProp = properties[0];
+                  setNewRoom({ 
+                    propertyId: firstProp?.id || '', 
+                    roomNumber: '', 
+                    price: firstProp?.defaultRoomPrice ? String(firstProp.defaultRoomPrice) : '', 
+                    area: '' 
+                  });
+                  setIsAddModalOpen(true);
+                }} 
+                style={{ padding: '8px 16px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M12 5v14M5 12h14"/></svg>
                 Thêm phòng
               </button>
@@ -181,12 +247,34 @@ export default function RoomsPage() {
                                 </div>
                               )}
                             </div>
-                            <button onClick={() => alert(`Chi tiết phòng ${room.roomNumber}`)}
-                              style={{ width: '100%', padding: '8px', background: 'transparent', border: '1px solid #252d3d', color: '#8896a8', borderRadius: 7, fontSize: 13, cursor: 'pointer', transition: '0.15s', fontFamily: 'inherit' }}
-                              onMouseOver={e => { e.currentTarget.style.background = '#222836'; e.currentTarget.style.color = '#e8e8e8'; e.currentTarget.style.borderColor = '#354055'; }}
-                              onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#8896a8'; e.currentTarget.style.borderColor = '#252d3d'; }}>
-                              Chi tiết phòng
-                            </button>
+                            
+                            {/* 🔥 KHU VỰC CÁC NÚT BẤM (ĐÃ CHÈN NÚT TRẢ PHÒNG) */}
+                            <div style={{ display: 'flex', gap: 8, marginTop: 'auto', paddingTop: 10 }}>
+                              <button onClick={() => router.push(`/property/${property.id}`)}
+                                style={{ flex: 1, padding: '8px', background: 'transparent', border: '1px solid #252d3d', color: '#8896a8', borderRadius: 7, fontSize: 13, cursor: 'pointer', transition: '0.15s', fontFamily: 'inherit' }}
+                                onMouseOver={e => { e.currentTarget.style.background = '#222836'; e.currentTarget.style.color = '#e8e8e8'; e.currentTarget.style.borderColor = '#354055'; }}
+                                onMouseOut={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#8896a8'; e.currentTarget.style.borderColor = '#252d3d'; }}>
+                                Chi tiết
+                              </button>
+                              
+                              {/* 🔥 NÚT TRẢ PHÒNG: Chỉ hiện khi phòng có khách (OCCUPIED) */}
+                              {room.status === 'OCCUPIED' && (
+                                <button onClick={() => handleManualCheckout(room.id, room.roomNumber)}
+                                  style={{ flex: 1, padding: '8px 0', borderRadius: 7, border: '1px solid rgba(245,158,11,0.2)', background: 'rgba(245,158,11,0.06)', color: '#fbbf24', cursor: 'pointer', fontSize: 13, fontWeight: 500, transition: 'all 0.15s', fontFamily: 'inherit' }}
+                                  onMouseOver={e => e.currentTarget.style.background = 'rgba(245,158,11,0.12)'}
+                                  onMouseOut={e => e.currentTarget.style.background = 'rgba(245,158,11,0.06)'}>
+                                  Trả phòng
+                                </button>
+                              )}
+
+                              <button onClick={() => handleDeleteRoom(room.id, room.status)}
+                                style={{ flex: 1, padding: '8px 0', borderRadius: 7, border: '1px solid rgba(248,113,113,0.2)', background: 'rgba(248,113,113,0.06)', color: '#f87171', cursor: 'pointer', fontSize: 13, fontWeight: 500, transition: 'all 0.15s', fontFamily: 'inherit' }}
+                                onMouseOver={e => e.currentTarget.style.background = 'rgba(248,113,113,0.12)'}
+                                onMouseOut={e => e.currentTarget.style.background = 'rgba(248,113,113,0.06)'}>
+                                Xóa
+                              </button>
+                            </div>
+
                           </div>
                         );
                       })}
@@ -199,18 +287,26 @@ export default function RoomsPage() {
         </div>
       </div>
 
-      {/* 🔥 MODAL THÊM PHÒNG */}
       {isAddModalOpen && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.8)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
+        <div onClick={e => { if (e.target === e.currentTarget) setIsAddModalOpen(false); }} style={{ position: 'fixed', inset: 0, background: 'rgba(2, 6, 23, 0.8)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 999 }}>
           <div className="fade-in" style={{ width: 400, background: '#1e2330', borderRadius: 20, padding: 28, border: '1px solid #252d3d' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
               <h3 style={{ fontSize: 18, fontWeight: 700, color: '#f0f0f0' }}>Thêm phòng mới</h3>
-              <button onClick={() => setIsAddModalOpen(false)} style={{ background: 'none', border: 'none', color: '#8896a8', cursor: 'pointer', fontSize: 16 }}>✕</button>
+              <button type="button" onClick={() => setIsAddModalOpen(false)} style={{ background: 'none', border: 'none', color: '#8896a8', cursor: 'pointer', fontSize: 16 }}>✕</button>
             </div>
             <form onSubmit={handleCreateRoom} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div>
                 <label style={{ color: '#8896a8', fontSize: 12, fontWeight: 600 }}>Khu trọ</label>
-                <select required className="input-field" value={newRoom.propertyId} onChange={e => setNewRoom({...newRoom, propertyId: e.target.value})}>
+                <select required className="input-field" value={newRoom.propertyId} 
+                  onChange={e => {
+                    const pId = e.target.value;
+                    const prop = properties.find(p => p.id === pId);
+                    setNewRoom({
+                      ...newRoom, 
+                      propertyId: pId, 
+                      price: prop?.defaultRoomPrice ? String(prop.defaultRoomPrice) : ''
+                    });
+                  }}>
                   <option value="" disabled>Chọn khu trọ...</option>
                   {properties.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
                 </select>
@@ -222,12 +318,15 @@ export default function RoomsPage() {
                 </div>
                 <div style={{ flex: 1 }}>
                   <label style={{ color: '#8896a8', fontSize: 12, fontWeight: 600 }}>Diện tích (m²)</label>
-                  <input required type="number" placeholder="VD: 20" className="input-field" value={newRoom.area} onChange={e => setNewRoom({...newRoom, area: e.target.value})} />
+                  <input required type="number" min="1" placeholder="VD: 20" className="input-field" value={newRoom.area} onChange={e => setNewRoom({...newRoom, area: e.target.value})} />
                 </div>
               </div>
               <div>
                 <label style={{ color: '#8896a8', fontSize: 12, fontWeight: 600 }}>Giá thuê (VNĐ/tháng)</label>
-                <input required type="number" placeholder="VD: 3000000" className="input-field" value={newRoom.price} onChange={e => setNewRoom({...newRoom, price: e.target.value})} />
+                <input required type="number" min={floorPrice} placeholder="VD: 3000000" className="input-field" value={newRoom.price} onChange={e => setNewRoom({...newRoom, price: e.target.value})} />
+                {floorPrice > 0 && (
+                  <div style={{ fontSize: 11, color: '#fbbf24', marginTop: 6, fontStyle: 'italic' }}>* Tối thiểu: {floorPrice.toLocaleString('vi-VN')} ₫</div>
+                )}
               </div>
               <button type="submit" disabled={isSubmitting} style={{ width: '100%', padding: 14, background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 600, marginTop: 8, cursor: isSubmitting ? 'not-allowed' : 'pointer', opacity: isSubmitting ? 0.7 : 1 }}>
                 {isSubmitting ? 'Đang tạo...' : 'Tạo phòng'}
